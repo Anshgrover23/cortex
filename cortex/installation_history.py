@@ -5,18 +5,17 @@ Installation History and Rollback System
 Tracks all installations and enables safe rollback for Cortex Linux.
 """
 
-import json
-import sqlite3
-import subprocess
 import datetime
 import hashlib
-import re
-import sys
-from pathlib import Path
-from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass, asdict
-from enum import Enum
+import json
 import logging
+import re
+import sqlite3
+import subprocess
+import sys
+from dataclasses import asdict, dataclass
+from enum import Enum
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,8 +44,8 @@ class PackageSnapshot:
     package_name: str
     version: str
     status: str  # installed, not-installed, config-files
-    dependencies: List[str]
-    config_files: List[str]
+    dependencies: list[str]
+    config_files: list[str]
 
 
 @dataclass
@@ -55,14 +54,14 @@ class InstallationRecord:
     id: str  # Unique ID (hash of timestamp + packages)
     timestamp: str
     operation_type: InstallationType
-    packages: List[str]
+    packages: list[str]
     status: InstallationStatus
-    before_snapshot: List[PackageSnapshot]
-    after_snapshot: List[PackageSnapshot]
-    commands_executed: List[str]
-    error_message: Optional[str] = None
+    before_snapshot: list[PackageSnapshot]
+    after_snapshot: list[PackageSnapshot]
+    commands_executed: list[str]
+    error_message: str | None = None
     rollback_available: bool = True
-    duration_seconds: Optional[float] = None
+    duration_seconds: float | None = None
 
 
 class InstallationHistory:
@@ -122,7 +121,7 @@ class InstallationHistory:
             logger.error(f"Failed to initialize database: {e}")
             raise
 
-    def _run_command(self, cmd: List[str]) -> Tuple[bool, str, str]:
+    def _run_command(self, cmd: list[str]) -> tuple[bool, str, str]:
         """Execute command and return success, stdout, stderr"""
         try:
             result = subprocess.run(
@@ -139,7 +138,7 @@ class InstallationHistory:
         except Exception as e:
             return (False, "", str(e))
 
-    def _get_package_info(self, package_name: str) -> Optional[PackageSnapshot]:
+    def _get_package_info(self, package_name: str) -> PackageSnapshot | None:
         """Get current state of a package"""
         # Check if package is installed
         success, stdout, _ = self._run_command([
@@ -198,7 +197,7 @@ class InstallationHistory:
             config_files=config_files[:20]   # Limit to first 20
         )
 
-    def _create_snapshot(self, packages: List[str]) -> List[PackageSnapshot]:
+    def _create_snapshot(self, packages: list[str]) -> list[PackageSnapshot]:
         """Create snapshot of package states"""
         snapshots = []
 
@@ -209,21 +208,21 @@ class InstallationHistory:
 
         return snapshots
 
-    def _extract_packages_from_commands(self, commands: List[str]) -> List[str]:
+    def _extract_packages_from_commands(self, commands: list[str]) -> list[str]:
         """Extract package names from installation commands"""
         packages = set()
-        
+
         # Patterns to match package names in commands
         patterns = [
             r'apt-get\s+(?:install|remove|purge)\s+(?:-y\s+)?(.+?)(?:\s*[|&<>]|$)',
             r'apt\s+(?:install|remove|purge)\s+(?:-y\s+)?(.+?)(?:\s*[|&<>]|$)',
             r'dpkg\s+-i\s+(.+?)(?:\s*[|&<>]|$)',
         ]
-        
+
         for cmd in commands:
             # Remove sudo if present
             cmd_clean = re.sub(r'^sudo\s+', '', cmd.strip())
-            
+
             for pattern in patterns:
                 matches = re.findall(pattern, cmd_clean)
                 for match in matches:
@@ -240,10 +239,10 @@ class InstallationHistory:
                             pkg = re.sub(r'[^\w\.\-\+]+$', '', pkg)
                             if pkg:
                                 packages.add(pkg)
-        
+
         return sorted(list(packages))
 
-    def _generate_id(self, packages: List[str]) -> str:
+    def _generate_id(self, packages: list[str]) -> str:
         """Generate unique ID for installation"""
         timestamp = datetime.datetime.now().isoformat()
         data = f"{timestamp}:{':'.join(sorted(packages))}"
@@ -252,8 +251,8 @@ class InstallationHistory:
     def record_installation(
         self,
         operation_type: InstallationType,
-        packages: List[str],
-        commands: List[str],
+        packages: list[str],
+        commands: list[str],
         start_time: datetime.datetime
     ) -> str:
         """
@@ -265,7 +264,7 @@ class InstallationHistory:
         # If packages list is empty, try to extract from commands
         if not packages:
             packages = self._extract_packages_from_commands(commands)
-        
+
         if not packages:
             logger.warning("No packages found in installation record")
 
@@ -311,7 +310,7 @@ class InstallationHistory:
         self,
         install_id: str,
         status: InstallationStatus,
-        error_message: Optional[str] = None
+        error_message: str | None = None
     ):
         """Update installation record after completion"""
         try:
@@ -364,8 +363,8 @@ class InstallationHistory:
     def get_history(
         self,
         limit: int = 50,
-        status_filter: Optional[InstallationStatus] = None
-    ) -> List[InstallationRecord]:
+        status_filter: InstallationStatus | None = None
+    ) -> list[InstallationRecord]:
         """Get installation history"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -395,11 +394,11 @@ class InstallationHistory:
                         packages=json.loads(row[3]) if row[3] else [],
                         status=InstallationStatus(row[4]),
                         before_snapshot=[
-                            PackageSnapshot(**s) 
+                            PackageSnapshot(**s)
                             for s in (json.loads(row[5]) if row[5] else [])
                         ],
                         after_snapshot=[
-                            PackageSnapshot(**s) 
+                            PackageSnapshot(**s)
                             for s in (json.loads(row[6]) if row[6] else [])
                         ],
                         commands_executed=json.loads(row[7]) if row[7] else [],
@@ -418,7 +417,7 @@ class InstallationHistory:
             logger.error(f"Failed to get history: {e}")
             return []
 
-    def get_installation(self, install_id: str) -> Optional[InstallationRecord]:
+    def get_installation(self, install_id: str) -> InstallationRecord | None:
         """Get specific installation by ID"""
         try:
             conn = sqlite3.connect(self.db_path)
@@ -442,11 +441,11 @@ class InstallationHistory:
                 packages=json.loads(row[3]) if row[3] else [],
                 status=InstallationStatus(row[4]),
                 before_snapshot=[
-                    PackageSnapshot(**s) 
+                    PackageSnapshot(**s)
                     for s in (json.loads(row[5]) if row[5] else [])
                 ],
                 after_snapshot=[
-                    PackageSnapshot(**s) 
+                    PackageSnapshot(**s)
                     for s in (json.loads(row[6]) if row[6] else [])
                 ],
                 commands_executed=json.loads(row[7]) if row[7] else [],
@@ -462,7 +461,7 @@ class InstallationHistory:
         self,
         install_id: str,
         dry_run: bool = False
-    ) -> Tuple[bool, str]:
+    ) -> tuple[bool, str]:
         """
         Rollback an installation
 
@@ -611,7 +610,7 @@ class InstallationHistory:
             with open(filepath, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    'ID', 'Timestamp', 'Operation', 'Packages', 
+                    'ID', 'Timestamp', 'Operation', 'Packages',
                     'Status', 'Duration', 'Error'
                 ])
 
@@ -738,7 +737,7 @@ if __name__ == "__main__":
                 print(f"\nError: {record.error_message}")
 
             if record.commands_executed:
-                print(f"\nCommands executed:")
+                print("\nCommands executed:")
                 for cmd in record.commands_executed:
                     print(f"  {cmd}")
 

@@ -1,9 +1,9 @@
-import json
 import datetime
+import json
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Dict, Optional
+
 from rich.console import Console
 
 # Initialize console for pretty logging
@@ -23,17 +23,17 @@ class NotificationManager:
         # Set up configuration directory in user home
         self.config_dir = Path.home() / ".cortex"
         self.config_dir.mkdir(exist_ok=True)
-        
+
         self.history_file = self.config_dir / "notification_history.json"
         self.config_file = self.config_dir / "notification_config.json"
-        
+
         # Default configuration
         self.config = {
             "dnd_start": "22:00",
             "dnd_end": "08:00",
             "enabled": True
         }
-        
+
         self._load_config()
         self.history = self._load_history()
 
@@ -41,7 +41,7 @@ class NotificationManager:
         """Loads configuration from JSON. Creates default if missing."""
         if self.config_file.exists():
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file) as f:
                     self.config.update(json.load(f))
             except json.JSONDecodeError:
                 console.print("[yellow]⚠️ Config file corrupted. Using defaults.[/yellow]")
@@ -53,11 +53,11 @@ class NotificationManager:
         with open(self.config_file, 'w') as f:
             json.dump(self.config, f, indent=4)
 
-    def _load_history(self) -> List[Dict]:
+    def _load_history(self) -> list[dict]:
         """Loads notification history."""
         if self.history_file.exists():
             try:
-                with open(self.history_file, 'r') as f:
+                with open(self.history_file) as f:
                     return json.load(f)
             except json.JSONDecodeError:
                 return []
@@ -76,7 +76,7 @@ class NotificationManager:
         """Checks if the current time falls within the Do Not Disturb window."""
         # If globally disabled, treat as DND active (suppress all except critical)
         if not self.config.get("enabled", True):
-            return True 
+            return True
 
         now = self._get_current_time()
         start_str = self.config["dnd_start"]
@@ -92,7 +92,7 @@ class NotificationManager:
         else:
             return now >= start_time or now <= end_time
 
-    def send(self, title: str, message: str, level: str = "normal", actions: Optional[List[str]] = None):
+    def send(self, title: str, message: str, level: str = "normal", actions: list[str] | None = None):
         """
         Sends a notification.
         :param level: 'low', 'normal', 'critical'. Critical bypasses DND.
@@ -109,7 +109,7 @@ class NotificationManager:
         if shutil.which("notify-send"):
             try:
                 cmd = ["notify-send", title, message, "-u", level, "-a", "Cortex"]
-                
+
                 # Add actions as hints if supported/requested
                 if actions:
                     for action in actions:
@@ -119,11 +119,11 @@ class NotificationManager:
                 success = True
             except Exception as e:
                 console.print(f"[red]Failed to send notification: {e}[/red]")
-        
+
         # 3. Fallback / Logger output
         # Formats actions for display: " [Actions: View Logs, Retry]"
         action_text = f" [bold cyan][Actions: {', '.join(actions)}][/bold cyan]" if actions else ""
-        
+
         if success:
             console.print(f"[bold green]🔔 Notification Sent:[/bold green] {title} - {message}{action_text}")
             self._log_history(title, message, level, status="sent", actions=actions)

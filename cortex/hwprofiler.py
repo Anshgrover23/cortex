@@ -5,24 +5,23 @@ Detects CPU, GPU, RAM, storage, and network capabilities.
 """
 
 import json
-import subprocess
-import re
 import os
-from typing import Dict, List, Optional, Any
-from pathlib import Path
+import re
+import subprocess
+from typing import Any
 
 
 class HardwareProfiler:
     """Detects and profiles system hardware."""
-    
+
     def __init__(self):
         self.cpu_info = None
         self.gpu_info = []
         self.ram_info = None
         self.storage_info = []
         self.network_info = None
-    
-    def detect_cpu(self) -> Dict[str, Any]:
+
+    def detect_cpu(self) -> dict[str, Any]:
         """
         Detect CPU information: model, cores, architecture.
         
@@ -30,12 +29,12 @@ class HardwareProfiler:
             dict: CPU information with model, cores, and architecture
         """
         cpu_info = {}
-        
+
         try:
             # Read /proc/cpuinfo for CPU details
-            with open('/proc/cpuinfo', 'r') as f:
+            with open('/proc/cpuinfo') as f:
                 cpuinfo = f.read()
-            
+
             # Extract model name
             model_match = re.search(r'model name\s*:\s*(.+)', cpuinfo)
             if model_match:
@@ -47,7 +46,7 @@ class HardwareProfiler:
                     cpu_info['model'] = model_match.group(1).strip()
                 else:
                     cpu_info['model'] = "Unknown CPU"
-            
+
             # Count physical cores
             physical_cores = 0
             core_ids = set()
@@ -58,7 +57,7 @@ class HardwareProfiler:
                         core_ids.add(core_id)
                 elif line.startswith('physical id'):
                     physical_cores = len(core_ids) if core_ids else 0
-            
+
             # If we couldn't get physical cores, count logical cores
             if physical_cores == 0:
                 logical_cores = len([l for l in cpuinfo.split('\n') if l.startswith('processor')])
@@ -72,7 +71,7 @@ class HardwareProfiler:
                         if pid:
                             physical_ids.add(pid)
                 cpu_info['cores'] = len(physical_ids) * len(core_ids) if core_ids else len(core_ids)
-            
+
             # Fallback: use nproc if available
             if cpu_info.get('cores', 0) == 0:
                 try:
@@ -81,7 +80,7 @@ class HardwareProfiler:
                         cpu_info['cores'] = int(result.stdout.strip())
                 except (subprocess.TimeoutExpired, ValueError, FileNotFoundError):
                     pass
-            
+
             # Detect architecture
             try:
                 result = subprocess.run(['uname', '-m'], capture_output=True, text=True, timeout=1)
@@ -92,7 +91,7 @@ class HardwareProfiler:
                     cpu_info['architecture'] = 'unknown'
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 cpu_info['architecture'] = 'unknown'
-            
+
         except Exception as e:
             cpu_info = {
                 'model': 'Unknown',
@@ -100,11 +99,11 @@ class HardwareProfiler:
                 'architecture': 'unknown',
                 'error': str(e)
             }
-        
+
         self.cpu_info = cpu_info
         return cpu_info
-    
-    def detect_gpu(self) -> List[Dict[str, Any]]:
+
+    def detect_gpu(self) -> list[dict[str, Any]]:
         """
         Detect GPU information: vendor, model, VRAM, CUDA version.
         
@@ -112,7 +111,7 @@ class HardwareProfiler:
             list: List of GPU information dictionaries
         """
         gpus = []
-        
+
         # Detect NVIDIA GPUs
         try:
             result = subprocess.run(
@@ -128,13 +127,13 @@ class HardwareProfiler:
                         if len(parts) >= 2:
                             gpu_name = parts[0]
                             vram_mb = int(parts[1]) if parts[1].isdigit() else 0
-                            
+
                             gpu_info = {
                                 'vendor': 'NVIDIA',
                                 'model': gpu_name,
                                 'vram': vram_mb
                             }
-                            
+
                             # Try to get CUDA version
                             try:
                                 cuda_result = subprocess.run(
@@ -160,11 +159,11 @@ class HardwareProfiler:
                                             gpu_info['cuda'] = version_match.group(1)
                                 except (subprocess.TimeoutExpired, FileNotFoundError):
                                     pass
-                            
+
                             gpus.append(gpu_info)
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         # Detect AMD GPUs using lspci
         try:
             result = subprocess.run(
@@ -180,7 +179,7 @@ class HardwareProfiler:
                             # Extract model name
                             model_match = re.search(r'(?:AMD|ATI|Radeon)[\s/]+([A-Za-z0-9\s]+)', line)
                             model = model_match.group(1).strip() if model_match else 'Unknown AMD GPU'
-                            
+
                             # Check if we already have this GPU (avoid duplicates)
                             if not any(g.get('vendor') == 'AMD' and g.get('model') == model for g in gpus):
                                 gpu_info = {
@@ -188,7 +187,7 @@ class HardwareProfiler:
                                     'model': model,
                                     'vram': None  # AMD VRAM detection requires rocm-smi or other tools
                                 }
-                                
+
                                 # Try to get VRAM using rocm-smi if available
                                 try:
                                     rocm_result = subprocess.run(
@@ -204,11 +203,11 @@ class HardwareProfiler:
                                             gpu_info['vram'] = int(vram_match.group(1))
                                 except (subprocess.TimeoutExpired, FileNotFoundError):
                                     pass
-                                
+
                                 gpus.append(gpu_info)
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         # Detect Intel GPUs
         try:
             result = subprocess.run(
@@ -223,7 +222,7 @@ class HardwareProfiler:
                         if 'Intel' in line:
                             model_match = re.search(r'Intel[^:]*:\s*([^\(]+)', line)
                             model = model_match.group(1).strip() if model_match else 'Unknown Intel GPU'
-                            
+
                             if not any(g.get('vendor') == 'Intel' and g.get('model') == model for g in gpus):
                                 gpus.append({
                                     'vendor': 'Intel',
@@ -232,10 +231,10 @@ class HardwareProfiler:
                                 })
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         self.gpu_info = gpus
         return gpus
-    
+
     def detect_ram(self) -> int:
         """
         Detect total RAM in MB.
@@ -245,9 +244,9 @@ class HardwareProfiler:
         """
         try:
             # Read /proc/meminfo
-            with open('/proc/meminfo', 'r') as f:
+            with open('/proc/meminfo') as f:
                 meminfo = f.read()
-            
+
             # Extract MemTotal
             match = re.search(r'MemTotal:\s+(\d+)\s+kB', meminfo)
             if match:
@@ -258,11 +257,11 @@ class HardwareProfiler:
             else:
                 self.ram_info = 0
                 return 0
-        except Exception as e:
+        except Exception:
             self.ram_info = 0
             return 0
-    
-    def detect_storage(self) -> List[Dict[str, Any]]:
+
+    def detect_storage(self) -> list[dict[str, Any]]:
         """
         Detect storage devices: type and size.
         
@@ -270,7 +269,7 @@ class HardwareProfiler:
             list: List of storage device information
         """
         storage_devices = []
-        
+
         try:
             # Use lsblk to get block device information
             result = subprocess.run(
@@ -279,21 +278,21 @@ class HardwareProfiler:
                 text=True,
                 timeout=2
             )
-            
+
             if result.returncode == 0:
                 for line in result.stdout.strip().split('\n'):
                     if line.strip():
                         parts = line.split()
                         if len(parts) >= 2:
                             device_name = parts[0]
-                            
+
                             # Skip loop devices and other virtual devices
                             if device_name.startswith('loop') or device_name.startswith('ram'):
                                 continue
-                            
+
                             device_type = parts[1] if len(parts) > 1 else 'unknown'
                             size_str = parts[2] if len(parts) > 2 else '0'
-                            
+
                             # Convert size to MB
                             size_mb = 0
                             if 'G' in size_str.upper():
@@ -302,18 +301,18 @@ class HardwareProfiler:
                                 size_mb = int(float(re.sub(r'[^0-9.]', '', size_str.replace('T', '').replace('t', ''))) * 1024 * 1024)
                             elif 'M' in size_str.upper():
                                 size_mb = int(float(re.sub(r'[^0-9.]', '', size_str.replace('M', '').replace('m', ''))))
-                            
+
                             # Determine storage type
                             storage_type = 'unknown'
                             device_path = f'/sys/block/{device_name}'
-                            
+
                             # Check if it's NVMe
                             if 'nvme' in device_name.lower():
                                 storage_type = 'nvme'
                             # Check if it's SSD (by checking if it's rotational)
                             elif os.path.exists(f'{device_path}/queue/rotational'):
                                 try:
-                                    with open(f'{device_path}/queue/rotational', 'r') as f:
+                                    with open(f'{device_path}/queue/rotational') as f:
                                         is_rotational = f.read().strip() == '1'
                                     storage_type = 'hdd' if is_rotational else 'ssd'
                                 except Exception:
@@ -324,19 +323,19 @@ class HardwareProfiler:
                                     storage_type = 'hdd'  # Default assumption
                                 elif 'nvme' in device_name.lower():
                                     storage_type = 'nvme'
-                            
+
                             storage_devices.append({
                                 'type': storage_type,
                                 'size': size_mb,
                                 'device': device_name
                             })
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         self.storage_info = storage_devices
         return storage_devices
-    
-    def detect_network(self) -> Dict[str, Any]:
+
+    def detect_network(self) -> dict[str, Any]:
         """
         Detect network capabilities.
         
@@ -347,7 +346,7 @@ class HardwareProfiler:
             'interfaces': [],
             'max_speed_mbps': 0
         }
-        
+
         try:
             # Get network interfaces using ip command
             result = subprocess.run(
@@ -356,7 +355,7 @@ class HardwareProfiler:
                 text=True,
                 timeout=1
             )
-            
+
             if result.returncode == 0:
                 interfaces = []
                 for line in result.stdout.split('\n'):
@@ -364,39 +363,39 @@ class HardwareProfiler:
                         parts = line.split(': ')
                         if len(parts) >= 2:
                             interface_name = parts[1].split('@')[0].split()[0] if '@' in parts[1] else parts[1].split()[0]
-                            
+
                             # Skip loopback
                             if interface_name == 'lo':
                                 continue
-                            
+
                             # Try to get interface speed
                             speed = None
                             try:
                                 speed_path = f'/sys/class/net/{interface_name}/speed'
                                 if os.path.exists(speed_path):
-                                    with open(speed_path, 'r') as f:
+                                    with open(speed_path) as f:
                                         speed_str = f.read().strip()
                                         if speed_str.isdigit():
                                             speed = int(speed_str)
                             except Exception:
                                 pass
-                            
+
                             interfaces.append({
                                 'name': interface_name,
                                 'speed_mbps': speed
                             })
-                            
+
                             if speed and speed > network_info['max_speed_mbps']:
                                 network_info['max_speed_mbps'] = speed
-                
+
                 network_info['interfaces'] = interfaces
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
-        
+
         self.network_info = network_info
         return network_info
-    
-    def profile(self) -> Dict[str, Any]:
+
+    def profile(self) -> dict[str, Any]:
         """
         Run complete hardware profiling.
         
@@ -409,7 +408,7 @@ class HardwareProfiler:
         ram = self.detect_ram()
         storage = self.detect_storage()
         network = self.detect_network()
-        
+
         # Build result dictionary
         result = {
             'cpu': {
@@ -422,9 +421,9 @@ class HardwareProfiler:
             'storage': storage,
             'network': network
         }
-        
+
         return result
-    
+
     def to_json(self, indent: int = 2) -> str:
         """
         Convert hardware profile to JSON string.
@@ -442,9 +441,9 @@ class HardwareProfiler:
 def main():
     """CLI entry point for hardware profiler."""
     import sys
-    
+
     profiler = HardwareProfiler()
-    
+
     try:
         profile = profiler.profile()
         print(profiler.to_json())

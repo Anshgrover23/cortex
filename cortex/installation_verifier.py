@@ -4,15 +4,14 @@ Installation Verification System
 Validates that software installations completed successfully
 """
 
-import subprocess
-import shlex
+import datetime
 import json
 import re
-import datetime
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-from dataclasses import dataclass, asdict
+import shlex
+import subprocess
+from dataclasses import asdict, dataclass
 from enum import Enum
+from pathlib import Path
 from shutil import which
 
 
@@ -30,9 +29,9 @@ class VerificationTest:
     name: str
     test_type: str  # command, file, service, version
     expected: str
-    actual: Optional[str] = None
+    actual: str | None = None
     passed: bool = False
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
 
 @dataclass
@@ -40,14 +39,14 @@ class VerificationResult:
     """Complete verification result"""
     package_name: str
     status: VerificationStatus
-    tests: List[VerificationTest]
+    tests: list[VerificationTest]
     overall_message: str
     timestamp: str
 
 
 class InstallationVerifier:
     """Verifies software installations"""
-    
+
     # Common verification patterns for popular packages
     VERIFICATION_PATTERNS = {
         'nginx': {
@@ -107,11 +106,11 @@ class InstallationVerifier:
             'version_regex': r'curl (\d+\.\d+\.\d+)'
         }
     }
-    
+
     def __init__(self):
-        self.results: List[VerificationResult] = []
-    
-    def _run_command(self, cmd: str, timeout: int = 5) -> Tuple[bool, str, str]:
+        self.results: list[VerificationResult] = []
+
+    def _run_command(self, cmd: str, timeout: int = 5) -> tuple[bool, str, str]:
         """
         Execute command safely
         Returns: (success, stdout, stderr)
@@ -130,11 +129,11 @@ class InstallationVerifier:
             return (False, "", "Command not found")
         except Exception as e:
             return (False, "", str(e))
-    
+
     def _test_command_exists(self, cmd: str) -> VerificationTest:
         """Test if command can be executed"""
         success, stdout, stderr = self._run_command(cmd)
-        
+
         return VerificationTest(
             name=f"Command execution: {cmd}",
             test_type="command",
@@ -143,13 +142,13 @@ class InstallationVerifier:
             passed=success,
             error_message=None if success else f"Command failed: {stderr}"
         )
-    
+
     def _test_file_exists(self, filepath: str) -> VerificationTest:
         """Test if file/binary exists"""
         path = Path(filepath)
         exists = path.exists()
-        actual_location: Optional[str] = None
-        
+        actual_location: str | None = None
+
         if exists:
             actual_location = str(path)
         else:
@@ -161,13 +160,13 @@ class InstallationVerifier:
             if resolved_path:
                 exists = True
                 actual_location = resolved_path
-        
+
         actual_message = (
             f"Found at {actual_location}"
             if actual_location
             else "Not found"
         )
-        
+
         return VerificationTest(
             name=f"File exists: {filepath}",
             test_type="file",
@@ -176,17 +175,17 @@ class InstallationVerifier:
             passed=exists,
             error_message=None if exists else f"File not found: {filepath}"
         )
-    
+
     def _test_service_status(self, service_name: str) -> VerificationTest:
         """Test if systemd service is active"""
         success, stdout, stderr = self._run_command(
             f"systemctl is-active {service_name}"
         )
-        
+
         service_state = stdout.strip().lower()
         is_active = success and service_state == "active"
         actual = service_state or stderr.strip() or "unknown"
-        
+
         error_message = None
         if not is_active:
             if service_state and service_state != "active":
@@ -195,7 +194,7 @@ class InstallationVerifier:
                 error_message = stderr.strip()
             else:
                 error_message = "Service check failed"
-        
+
         return VerificationTest(
             name=f"Service status: {service_name}",
             test_type="service",
@@ -204,16 +203,16 @@ class InstallationVerifier:
             passed=is_active,
             error_message=error_message
         )
-    
+
     def _test_version_match(
-        self, 
-        cmd: str, 
+        self,
+        cmd: str,
         version_regex: str,
-        expected_version: Optional[str] = None
+        expected_version: str | None = None
     ) -> VerificationTest:
         """Test version information"""
         success, stdout, stderr = self._run_command(cmd)
-        
+
         if not success:
             return VerificationTest(
                 name=f"Version check: {cmd}",
@@ -223,16 +222,16 @@ class InstallationVerifier:
                 passed=False,
                 error_message=stderr
             )
-        
+
         # Extract version
         match = re.search(version_regex, stdout + stderr)
         actual_version = match.group(1) if match else "Unknown"
-        
+
         # Check if version matches if expected_version provided
         version_matches = True
         if expected_version:
             version_matches = (actual_version == expected_version)
-        
+
         return VerificationTest(
             name=f"Version check: {cmd}",
             test_type="version",
@@ -241,12 +240,12 @@ class InstallationVerifier:
             passed=bool(match) and version_matches,
             error_message=None if match else "Could not parse version"
         )
-    
+
     def verify_package(
         self,
         package_name: str,
-        expected_version: Optional[str] = None,
-        custom_tests: Optional[List[Dict]] = None
+        expected_version: str | None = None,
+        custom_tests: list[dict] | None = None
     ) -> VerificationResult:
         """
         Verify package installation
@@ -256,25 +255,25 @@ class InstallationVerifier:
             expected_version: Optional version to check against
             custom_tests: Optional list of custom test definitions
         """
-        
-        tests: List[VerificationTest] = []
-        
+
+        tests: list[VerificationTest] = []
+
         # Use predefined patterns if available
         if package_name in self.VERIFICATION_PATTERNS:
             pattern = self.VERIFICATION_PATTERNS[package_name]
-            
+
             # Test command
             if 'command' in pattern:
                 tests.append(self._test_command_exists(pattern['command']))
-            
+
             # Test file
             if 'file' in pattern:
                 tests.append(self._test_file_exists(pattern['file']))
-            
+
             # Test service
             if 'service' in pattern:
                 tests.append(self._test_service_status(pattern['service']))
-            
+
             # Test version
             if 'version_regex' in pattern and 'command' in pattern:
                 tests.append(
@@ -284,7 +283,7 @@ class InstallationVerifier:
                         expected_version
                     )
                 )
-        
+
         # Add custom tests
         if custom_tests:
             for test_def in custom_tests:
@@ -300,7 +299,7 @@ class InstallationVerifier:
                     tests.append(
                         self._test_service_status(test_def['name'])
                     )
-        
+
         # If no patterns found, try basic checks
         if not tests:
             # Try dpkg query
@@ -315,11 +314,11 @@ class InstallationVerifier:
                 passed=success,
                 error_message=None if success else "Package not in dpkg database"
             ))
-        
+
         # Determine overall status
         total_tests = len(tests)
         passed_tests = sum(1 for t in tests if t.passed)
-        
+
         if passed_tests == total_tests:
             status = VerificationStatus.SUCCESS
             message = f"✅ {package_name} installed and verified successfully"
@@ -335,7 +334,7 @@ class InstallationVerifier:
         else:
             status = VerificationStatus.UNKNOWN
             message = f"❓ Could not verify {package_name} installation"
-        
+
         result = VerificationResult(
             package_name=package_name,
             status=status,
@@ -343,27 +342,27 @@ class InstallationVerifier:
             overall_message=message,
             timestamp=datetime.datetime.now().isoformat()
         )
-        
+
         self.results.append(result)
         return result
-    
+
     def verify_multiple_packages(
         self,
-        packages: List[str]
-    ) -> List[VerificationResult]:
+        packages: list[str]
+    ) -> list[VerificationResult]:
         """Verify multiple packages"""
         results = []
-        
+
         print(f"\n🔍 Verifying {len(packages)} package(s)...")
-        
+
         for package in packages:
             print(f"\n  Checking {package}...")
             result = self.verify_package(package)
             results.append(result)
             print(f"  {result.overall_message}")
-        
+
         return results
-    
+
     def print_detailed_results(self, result: VerificationResult) -> None:
         """Print detailed verification results"""
         print("\n" + "="*60)
@@ -372,26 +371,26 @@ class InstallationVerifier:
         print(f"\nStatus: {result.status.value.upper()}")
         print(f"Time: {result.timestamp}")
         print(f"\n{result.overall_message}\n")
-        
+
         print("Test Results:")
         print("-" * 60)
-        
+
         for i, test in enumerate(result.tests, 1):
             status_icon = "✅" if test.passed else "❌"
             print(f"\n{i}. {status_icon} {test.name}")
             print(f"   Type: {test.test_type}")
             print(f"   Expected: {test.expected}")
             print(f"   Actual: {test.actual}")
-            
+
             if test.error_message:
                 print(f"   Error: {test.error_message}")
-        
+
         print("\n" + "="*60)
-    
+
     def export_results_json(self, filepath: str) -> None:
         """Export all verification results to JSON"""
         results_dict = []
-        
+
         for result in self.results:
             result_dict = {
                 'package_name': result.package_name,
@@ -401,13 +400,13 @@ class InstallationVerifier:
                 'tests': [asdict(test) for test in result.tests]
             }
             results_dict.append(result_dict)
-        
+
         with open(filepath, 'w') as f:
             json.dump(results_dict, f, indent=2)
-        
+
         print(f"\n✅ Results exported to {filepath}")
-    
-    def get_summary(self) -> Dict[str, int]:
+
+    def get_summary(self) -> dict[str, int]:
         """Get summary statistics"""
         summary = {
             'total': len(self.results),
@@ -416,7 +415,7 @@ class InstallationVerifier:
             'partial': 0,
             'unknown': 0
         }
-        
+
         for result in self.results:
             if result.status == VerificationStatus.SUCCESS:
                 summary['success'] += 1
@@ -426,15 +425,15 @@ class InstallationVerifier:
                 summary['partial'] += 1
             else:
                 summary['unknown'] += 1
-        
+
         return summary
 
 
 # CLI Interface
 if __name__ == "__main__":
-    import sys
     import argparse
-    
+    import sys
+
     parser = argparse.ArgumentParser(
         description="Verify software package installations"
     )
@@ -456,19 +455,19 @@ if __name__ == "__main__":
         action='store_true',
         help='Show detailed test results'
     )
-    
+
     args = parser.parse_args()
-    
+
     verifier = InstallationVerifier()
-    
+
     # Verify packages
     results = verifier.verify_multiple_packages(args.packages)
-    
+
     # Print detailed results if requested
     if args.detailed:
         for result in results:
             verifier.print_detailed_results(result)
-    
+
     # Print summary
     summary = verifier.get_summary()
     print("\n" + "="*60)
@@ -479,10 +478,10 @@ if __name__ == "__main__":
     print(f"❌ Failed: {summary['failed']}")
     print(f"⚠️ Partial: {summary['partial']}")
     print(f"❓ Unknown: {summary['unknown']}")
-    
+
     # Export if requested
     if args.export:
         verifier.export_results_json(args.export)
-    
+
     # Exit with appropriate code
     sys.exit(0 if summary['failed'] == 0 else 1)

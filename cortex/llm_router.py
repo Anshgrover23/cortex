@@ -11,15 +11,16 @@ Author: Cortex Linux Team
 License: Modified MIT License
 """
 
+import json
+import logging
 import os
 import time
-import json
-from typing import Dict, List, Optional, Any, Literal
+from dataclasses import dataclass
 from enum import Enum
-from dataclasses import dataclass, asdict
+from typing import Any
+
 from anthropic import Anthropic
 from openai import OpenAI
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +54,7 @@ class LLMResponse:
     tokens_used: int
     cost_usd: float
     latency_seconds: float
-    raw_response: Optional[Dict] = None
+    raw_response: dict | None = None
 
 
 @dataclass
@@ -77,7 +78,7 @@ class LLMRouter:
     
     Includes fallback logic if primary LLM fails.
     """
-    
+
     # Cost per 1M tokens (estimated, update with actual pricing)
     COSTS = {
         LLMProvider.CLAUDE: {
@@ -89,7 +90,7 @@ class LLMRouter:
             "output": 5.0   # Estimated lower cost
         }
     }
-    
+
     # Routing rules: TaskType → Preferred LLM
     ROUTING_RULES = {
         TaskType.USER_CHAT: LLMProvider.CLAUDE,
@@ -101,11 +102,11 @@ class LLMRouter:
         TaskType.CONFIGURATION: LLMProvider.KIMI_K2,
         TaskType.TOOL_EXECUTION: LLMProvider.KIMI_K2,
     }
-    
+
     def __init__(
         self,
-        claude_api_key: Optional[str] = None,
-        kimi_api_key: Optional[str] = None,
+        claude_api_key: str | None = None,
+        kimi_api_key: str | None = None,
         default_provider: LLMProvider = LLMProvider.CLAUDE,
         enable_fallback: bool = True,
         track_costs: bool = True
@@ -125,17 +126,17 @@ class LLMRouter:
         self.default_provider = default_provider
         self.enable_fallback = enable_fallback
         self.track_costs = track_costs
-        
+
         # Initialize clients
         self.claude_client = None
         self.kimi_client = None
-        
+
         if self.claude_api_key:
             self.claude_client = Anthropic(api_key=self.claude_api_key)
             logger.info("✅ Claude API client initialized")
         else:
             logger.warning("⚠️  No Claude API key provided")
-            
+
         if self.kimi_api_key:
             self.kimi_client = OpenAI(
                 api_key=self.kimi_api_key,
@@ -144,7 +145,7 @@ class LLMRouter:
             logger.info("✅ Kimi K2 API client initialized")
         else:
             logger.warning("⚠️  No Kimi K2 API key provided")
-        
+
         # Cost tracking
         self.total_cost_usd = 0.0
         self.request_count = 0
@@ -152,11 +153,11 @@ class LLMRouter:
             LLMProvider.CLAUDE: {"requests": 0, "tokens": 0, "cost": 0.0},
             LLMProvider.KIMI_K2: {"requests": 0, "tokens": 0, "cost": 0.0}
         }
-    
+
     def route_task(
         self,
         task_type: TaskType,
-        force_provider: Optional[LLMProvider] = None
+        force_provider: LLMProvider | None = None
     ) -> RoutingDecision:
         """
         Determine which LLM should handle this task.
@@ -175,42 +176,42 @@ class LLMRouter:
                 reasoning="Forced by caller",
                 confidence=1.0
             )
-        
+
         # Use routing rules
         provider = self.ROUTING_RULES.get(task_type, self.default_provider)
-        
+
         # Check if preferred provider is available
         if provider == LLMProvider.CLAUDE and not self.claude_client:
             if self.kimi_client and self.enable_fallback:
-                logger.warning(f"Claude unavailable, falling back to Kimi K2")
+                logger.warning("Claude unavailable, falling back to Kimi K2")
                 provider = LLMProvider.KIMI_K2
             else:
                 raise RuntimeError("Claude API not configured and no fallback available")
-        
+
         if provider == LLMProvider.KIMI_K2 and not self.kimi_client:
             if self.claude_client and self.enable_fallback:
-                logger.warning(f"Kimi K2 unavailable, falling back to Claude")
+                logger.warning("Kimi K2 unavailable, falling back to Claude")
                 provider = LLMProvider.CLAUDE
             else:
                 raise RuntimeError("Kimi K2 API not configured and no fallback available")
-        
+
         reasoning = f"{task_type.value} → {provider.value} (optimal for this task)"
-        
+
         return RoutingDecision(
             provider=provider,
             task_type=task_type,
             reasoning=reasoning,
             confidence=0.95
         )
-    
+
     def complete(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         task_type: TaskType = TaskType.USER_CHAT,
-        force_provider: Optional[LLMProvider] = None,
+        force_provider: LLMProvider | None = None,
         temperature: float = 0.7,
         max_tokens: int = 4096,
-        tools: Optional[List[Dict]] = None
+        tools: list[dict] | None = None
     ) -> LLMResponse:
         """
         Generate completion using the most appropriate LLM.
@@ -227,11 +228,11 @@ class LLMRouter:
             LLMResponse with content and metadata
         """
         start_time = time.time()
-        
+
         # Route to appropriate LLM
         routing = self.route_task(task_type, force_provider)
         logger.info(f"🧭 Routing: {routing.reasoning}")
-        
+
         try:
             if routing.provider == LLMProvider.CLAUDE:
                 response = self._complete_claude(
@@ -241,18 +242,18 @@ class LLMRouter:
                 response = self._complete_kimi(
                     messages, temperature, max_tokens, tools
                 )
-            
+
             response.latency_seconds = time.time() - start_time
-            
+
             # Track stats
             if self.track_costs:
                 self._update_stats(response)
-            
+
             return response
-            
+
         except Exception as e:
             logger.error(f"❌ Error with {routing.provider.value}: {e}")
-            
+
             # Try fallback if enabled
             if self.enable_fallback:
                 fallback_provider = (
@@ -260,7 +261,7 @@ class LLMRouter:
                     else LLMProvider.CLAUDE
                 )
                 logger.info(f"🔄 Attempting fallback to {fallback_provider.value}")
-                
+
                 return self.complete(
                     messages=messages,
                     task_type=task_type,
@@ -271,25 +272,25 @@ class LLMRouter:
                 )
             else:
                 raise
-    
+
     def _complete_claude(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-        tools: Optional[List[Dict]] = None
+        tools: list[dict] | None = None
     ) -> LLMResponse:
         """Generate completion using Claude API."""
         # Extract system message if present
         system_message = None
         user_messages = []
-        
+
         for msg in messages:
             if msg["role"] == "system":
                 system_message = msg["content"]
             else:
                 user_messages.append(msg)
-        
+
         # Call Claude API
         kwargs = {
             "model": "claude-sonnet-4-20250514",
@@ -297,29 +298,29 @@ class LLMRouter:
             "temperature": temperature,
             "messages": user_messages
         }
-        
+
         if system_message:
             kwargs["system"] = system_message
-        
+
         if tools:
             # Convert OpenAI tool format to Claude format if needed
             kwargs["tools"] = tools
-        
+
         response = self.claude_client.messages.create(**kwargs)
-        
+
         # Extract content
         content = ""
         for block in response.content:
             if hasattr(block, 'text'):
                 content += block.text
-        
+
         # Calculate cost
         input_tokens = response.usage.input_tokens
         output_tokens = response.usage.output_tokens
         cost = self._calculate_cost(
             LLMProvider.CLAUDE, input_tokens, output_tokens
         )
-        
+
         return LLMResponse(
             content=content,
             provider=LLMProvider.CLAUDE,
@@ -329,42 +330,42 @@ class LLMRouter:
             latency_seconds=0.0,  # Set by caller
             raw_response=response.model_dump() if hasattr(response, 'model_dump') else None
         )
-    
+
     def _complete_kimi(
         self,
-        messages: List[Dict[str, str]],
+        messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
-        tools: Optional[List[Dict]] = None
+        tools: list[dict] | None = None
     ) -> LLMResponse:
         """Generate completion using Kimi K2 API."""
         # Kimi K2 recommends temperature=0.6
         # Map user's temperature to Kimi's scale
         kimi_temp = temperature * 0.6
-        
+
         kwargs = {
             "model": "kimi-k2-instruct",
             "messages": messages,
             "temperature": kimi_temp,
             "max_tokens": max_tokens
         }
-        
+
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
-        
+
         response = self.kimi_client.chat.completions.create(**kwargs)
-        
+
         # Extract content
         content = response.choices[0].message.content or ""
-        
+
         # Calculate cost
         input_tokens = response.usage.prompt_tokens
         output_tokens = response.usage.completion_tokens
         cost = self._calculate_cost(
             LLMProvider.KIMI_K2, input_tokens, output_tokens
         )
-        
+
         return LLMResponse(
             content=content,
             provider=LLMProvider.KIMI_K2,
@@ -374,7 +375,7 @@ class LLMRouter:
             latency_seconds=0.0,  # Set by caller
             raw_response=response.model_dump() if hasattr(response, 'model_dump') else None
         )
-    
+
     def _calculate_cost(
         self,
         provider: LLMProvider,
@@ -386,18 +387,18 @@ class LLMRouter:
         input_cost = (input_tokens / 1_000_000) * costs["input"]
         output_cost = (output_tokens / 1_000_000) * costs["output"]
         return input_cost + output_cost
-    
+
     def _update_stats(self, response: LLMResponse):
         """Update usage statistics."""
         self.total_cost_usd += response.cost_usd
         self.request_count += 1
-        
+
         stats = self.provider_stats[response.provider]
         stats["requests"] += 1
         stats["tokens"] += response.tokens_used
         stats["cost"] += response.cost_usd
-    
-    def get_stats(self) -> Dict[str, Any]:
+
+    def get_stats(self) -> dict[str, Any]:
         """
         Get usage statistics.
         
@@ -420,7 +421,7 @@ class LLMRouter:
                 }
             }
         }
-    
+
     def reset_stats(self):
         """Reset all usage statistics."""
         self.total_cost_usd = 0.0
@@ -433,7 +434,7 @@ class LLMRouter:
 def complete_task(
     prompt: str,
     task_type: TaskType = TaskType.USER_CHAT,
-    system_prompt: Optional[str] = None,
+    system_prompt: str | None = None,
     **kwargs
 ) -> str:
     """
@@ -449,12 +450,12 @@ def complete_task(
         String response from LLM
     """
     router = LLMRouter()
-    
+
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
-    
+
     response = router.complete(messages, task_type=task_type, **kwargs)
     return response.content
 
@@ -462,9 +463,9 @@ def complete_task(
 if __name__ == "__main__":
     # Example usage
     print("=== LLM Router Demo ===\n")
-    
+
     router = LLMRouter()
-    
+
     # Example 1: User chat (routed to Claude)
     print("1. User Chat Example:")
     response = router.complete(
@@ -477,7 +478,7 @@ if __name__ == "__main__":
     print(f"Provider: {response.provider.value}")
     print(f"Response: {response.content[:100]}...")
     print(f"Cost: ${response.cost_usd:.6f}\n")
-    
+
     # Example 2: System operation (routed to Kimi K2)
     print("2. System Operation Example:")
     response = router.complete(
@@ -490,7 +491,7 @@ if __name__ == "__main__":
     print(f"Provider: {response.provider.value}")
     print(f"Response: {response.content[:100]}...")
     print(f"Cost: ${response.cost_usd:.6f}\n")
-    
+
     # Show stats
     print("=== Usage Statistics ===")
     stats = router.get_stats()

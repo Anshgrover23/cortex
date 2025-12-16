@@ -12,18 +12,18 @@ Features:
 - Comprehensive logging
 """
 
-import subprocess
-import shlex
-import os
-import sys
-import re
 import json
-import time
-import shutil
 import logging
+import os
+import re
 import resource
-from typing import Dict, List, Optional, Tuple, Any
+import shlex
+import shutil
+import subprocess
+import sys
+import time
 from datetime import datetime
+from typing import Any
 
 
 class CommandBlocked(Exception):
@@ -33,11 +33,11 @@ class CommandBlocked(Exception):
 
 class ExecutionResult:
     """Result of command execution."""
-    
-    def __init__(self, command: str, exit_code: int = 0, stdout: str = "", 
+
+    def __init__(self, command: str, exit_code: int = 0, stdout: str = "",
                  stderr: str = "", execution_time: float = 0.0,
-                 blocked: bool = False, violation: Optional[str] = None,
-                 preview: Optional[str] = None):
+                 blocked: bool = False, violation: str | None = None,
+                 preview: str | None = None):
         self.command = command
         self.exit_code = exit_code
         self.stdout = stdout
@@ -47,18 +47,18 @@ class ExecutionResult:
         self.violation = violation
         self.preview = preview
         self.timestamp = datetime.now().isoformat()
-    
+
     @property
     def success(self) -> bool:
         """Check if command executed successfully."""
         return not self.blocked and self.exit_code == 0
-    
+
     @property
     def failed(self) -> bool:
         """Check if command failed."""
         return not self.success
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             'command': self.command,
@@ -86,7 +86,7 @@ class SandboxExecutor:
     - Rollback capability
     - Comprehensive logging
     """
-    
+
     # Whitelist of allowed commands (base commands only)
     ALLOWED_COMMANDS = {
         'apt-get', 'apt', 'dpkg',
@@ -101,7 +101,7 @@ class SandboxExecutor:
         'chmod', 'chown',  # Limited use
         'systemctl',  # Read-only operations
     }
-    
+
     # Commands that require sudo (package installation only)
     SUDO_ALLOWED_COMMANDS = {
         'apt-get install', 'apt-get update', 'apt-get upgrade',
@@ -109,7 +109,7 @@ class SandboxExecutor:
         'pip install', 'pip3 install',
         'dpkg -i',
     }
-    
+
     # Dangerous patterns to block
     DANGEROUS_PATTERNS = [
         r'rm\s+-rf\s+[/\*]',  # rm -rf / or rm -rf /*
@@ -147,17 +147,17 @@ class SandboxExecutor:
         # Fork bomb
         r':\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}',  # :(){ :|:& };:
     ]
-    
+
     # Allowed directories for file operations
     ALLOWED_DIRECTORIES = [
         '/tmp',
         '/var/tmp',
         os.path.expanduser('~'),
     ]
-    
-    def __init__(self, 
-                 firejail_path: Optional[str] = None,
-                 log_file: Optional[str] = None,
+
+    def __init__(self,
+                 firejail_path: str | None = None,
+                 log_file: str | None = None,
                  max_cpu_cores: int = 2,
                  max_memory_mb: int = 2048,
                  max_disk_mb: int = 1024,
@@ -181,32 +181,32 @@ class SandboxExecutor:
         self.max_disk_mb = max_disk_mb
         self.timeout_seconds = timeout_seconds
         self.enable_rollback = enable_rollback
-        
+
         # Setup logging
         self.log_file = log_file or os.path.join(
             os.path.expanduser('~'), '.cortex', 'sandbox_audit.log'
         )
         self._setup_logging()
-        
+
         # Rollback tracking
-        self.rollback_snapshots: Dict[str, Dict[str, Any]] = {}
-        self.current_session_id: Optional[str] = None
-        
+        self.rollback_snapshots: dict[str, dict[str, Any]] = {}
+        self.current_session_id: str | None = None
+
         # Audit log
-        self.audit_log: List[Dict[str, Any]] = []
-        
+        self.audit_log: list[dict[str, Any]] = []
+
         # Verify firejail is available
         if not self.firejail_path:
             self.logger.warning(
                 "Firejail not found. Sandboxing will be limited. "
                 "Install firejail for full security: sudo apt-get install firejail"
             )
-    
-    def _find_firejail(self) -> Optional[str]:
+
+    def _find_firejail(self) -> str | None:
         """Find firejail binary in system PATH."""
         firejail_path = shutil.which('firejail')
         return firejail_path
-    
+
     def is_firejail_available(self) -> bool:
         """
         Check if Firejail is available on the system.
@@ -215,43 +215,43 @@ class SandboxExecutor:
             True if Firejail is available, False otherwise
         """
         return self.firejail_path is not None
-    
+
     def _setup_logging(self):
         """Setup logging configuration."""
         # Create log directory if it doesn't exist
         log_dir = os.path.dirname(self.log_file)
         if log_dir and not os.path.exists(log_dir):
             os.makedirs(log_dir, mode=0o700, exist_ok=True)
-        
+
         # Setup logger (avoid duplicate handlers)
         self.logger = logging.getLogger('SandboxExecutor')
         self.logger.setLevel(logging.INFO)
-        
+
         # Clear existing handlers to avoid duplicates
         self.logger.handlers.clear()
-        
+
         # File handler
         file_handler = logging.FileHandler(self.log_file)
         file_handler.setLevel(logging.INFO)
-        
+
         # Console handler (only warnings and above)
         console_handler = logging.StreamHandler(sys.stderr)
         console_handler.setLevel(logging.WARNING)
-        
+
         # Formatter
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
-        
+
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
-        
+
         # Prevent propagation to root logger
         self.logger.propagate = False
-    
-    def validate_command(self, command: str) -> Tuple[bool, Optional[str]]:
+
+    def validate_command(self, command: str) -> tuple[bool, str | None]:
         """
         Validate command for security.
         
@@ -265,41 +265,41 @@ class SandboxExecutor:
         for pattern in self.DANGEROUS_PATTERNS:
             if re.search(pattern, command, re.IGNORECASE):
                 return False, f"Dangerous pattern detected: {pattern}"
-        
+
         # Parse command
         try:
             parts = shlex.split(command)
             if not parts:
                 return False, "Empty command"
-            
+
             base_command = parts[0]
-            
+
             # Check if command is in whitelist
             if base_command not in self.ALLOWED_COMMANDS:
                 # Check if it's a sudo command
                 if base_command == 'sudo':
                     if len(parts) < 2:
                         return False, "Sudo command without arguments"
-                    
+
                     sudo_command = ' '.join(parts[1:3]) if len(parts) >= 3 else parts[1]
-                    
+
                     # Check if sudo command is allowed
                     if not any(sudo_command.startswith(allowed) for allowed in self.SUDO_ALLOWED_COMMANDS):
                         return False, f"Sudo command not whitelisted: {sudo_command}"
                 else:
                     return False, f"Command not whitelisted: {base_command}"
-            
+
             # Validate file paths in command
             path_violation = self._validate_paths(command)
             if path_violation:
                 return False, path_violation
-            
+
             return True, None
-            
+
         except ValueError as e:
             return False, f"Invalid command syntax: {str(e)}"
-    
-    def _validate_paths(self, command: str) -> Optional[str]:
+
+    def _validate_paths(self, command: str) -> str | None:
         """
         Validate file paths in command to prevent path traversal attacks.
         
@@ -313,7 +313,7 @@ class SandboxExecutor:
         # This is a simplified check - in production, use proper shell parsing
         path_pattern = r'[/~][^\s<>|&;]*'
         paths = re.findall(path_pattern, command)
-        
+
         for path in paths:
             # Expand user home
             expanded = os.path.expanduser(path)
@@ -322,13 +322,13 @@ class SandboxExecutor:
                 abs_path = os.path.abspath(expanded)
             except (OSError, ValueError):
                 continue
-            
+
             # Check if path is in allowed directories
             allowed = False
             for allowed_dir in self.ALLOWED_DIRECTORIES:
                 allowed_expanded = os.path.expanduser(allowed_dir)
                 allowed_abs = os.path.abspath(allowed_expanded)
-                
+
                 # Allow if path is within allowed directory
                 try:
                     if os.path.commonpath([abs_path, allowed_abs]) == allowed_abs:
@@ -337,7 +337,7 @@ class SandboxExecutor:
                 except ValueError:
                     # Paths don't share common path
                     pass
-            
+
             # Block access to critical system directories
             critical_dirs = ['/boot', '/sys', '/proc', '/dev', '/etc', '/usr/bin', '/usr/sbin', '/sbin', '/bin']
             for critical in critical_dirs:
@@ -349,7 +349,7 @@ class SandboxExecutor:
                     if critical == '/etc' and 'read' in command.lower():
                         continue
                     return f"Access to critical directory blocked: {abs_path}"
-            
+
             # Block path traversal attempts
             if '..' in path or path.startswith('/') and not any(abs_path.startswith(os.path.expanduser(d)) for d in self.ALLOWED_DIRECTORIES):
                 # Allow if it's a command argument (like --config=/etc/file.conf)
@@ -357,13 +357,13 @@ class SandboxExecutor:
                     # More permissive: only block if clearly dangerous
                     if any(danger in abs_path for danger in ['/etc/passwd', '/etc/shadow', '/boot', '/sys']):
                         return f"Path traversal to sensitive location blocked: {abs_path}"
-            
+
             # If not in allowed directory and not a standard command argument, warn
             # (This is permissive - adjust based on security requirements)
-        
+
         return None
-    
-    def _create_firejail_command(self, command: str) -> List[str]:
+
+    def _create_firejail_command(self, command: str) -> list[str]:
         """
         Create firejail command with resource limits.
         
@@ -376,7 +376,7 @@ class SandboxExecutor:
         if not self.firejail_path:
             # Fallback to direct execution (not recommended)
             return shlex.split(command)
-        
+
         # Build firejail command with security options
         memory_bytes = self.max_memory_mb * 1024 * 1024
         firejail_cmd = [
@@ -393,13 +393,13 @@ class SandboxExecutor:
             '--shell=none',  # No shell
             '--seccomp',  # Enable seccomp filtering
         ]
-        
+
         # Add command
         firejail_cmd.extend(shlex.split(command))
-        
+
         return firejail_cmd
-    
-    def _create_snapshot(self, session_id: str) -> Dict[str, Any]:
+
+    def _create_snapshot(self, session_id: str) -> dict[str, Any]:
         """
         Create snapshot of current state for rollback.
         
@@ -416,7 +416,7 @@ class SandboxExecutor:
             'files_created': [],
             'file_backups': {},  # Store file contents for restoration
         }
-        
+
         # Track files in allowed directories that might be modified
         # Store their current state for potential rollback
         for allowed_dir in self.ALLOWED_DIRECTORIES:
@@ -429,11 +429,11 @@ class SandboxExecutor:
                     snapshot['directories_tracked'].append(allowed_expanded)
                 except Exception:
                     pass
-        
+
         self.rollback_snapshots[session_id] = snapshot
         self.logger.debug(f"Created snapshot for session {session_id}")
         return snapshot
-    
+
     def _rollback(self, session_id: str) -> bool:
         """
         Rollback changes from a session.
@@ -447,10 +447,10 @@ class SandboxExecutor:
         if session_id not in self.rollback_snapshots:
             self.logger.warning(f"No snapshot found for session {session_id}")
             return False
-        
+
         snapshot = self.rollback_snapshots[session_id]
         self.logger.info(f"Rolling back session {session_id}")
-        
+
         # Restore backed up files
         restored_count = 0
         for file_path, file_content in snapshot.get('file_backups', {}).items():
@@ -462,7 +462,7 @@ class SandboxExecutor:
                     self.logger.debug(f"Restored file: {file_path}")
             except Exception as e:
                 self.logger.warning(f"Failed to restore {file_path}: {e}")
-        
+
         # Remove created files
         for file_path in snapshot.get('files_created', []):
             try:
@@ -471,15 +471,15 @@ class SandboxExecutor:
                     self.logger.debug(f"Removed created file: {file_path}")
             except Exception as e:
                 self.logger.warning(f"Failed to remove {file_path}: {e}")
-        
+
         self.logger.info(f"Rollback completed: {restored_count} files restored, "
                         f"{len(snapshot.get('files_created', []))} files removed")
         return True
-    
-    def execute(self, 
+
+    def execute(self,
                 command: str,
                 dry_run: bool = False,
-                enable_rollback: Optional[bool] = None) -> ExecutionResult:
+                enable_rollback: bool | None = None) -> ExecutionResult:
         """
         Execute command in sandbox.
         
@@ -494,7 +494,7 @@ class SandboxExecutor:
         start_time = time.time()
         session_id = f"session_{int(start_time)}"
         self.current_session_id = session_id
-        
+
         # Validate command
         is_valid, violation = self.validate_command(command)
         if not is_valid:
@@ -507,16 +507,16 @@ class SandboxExecutor:
             )
             self._log_security_event(result)
             raise CommandBlocked(violation or "Command blocked")
-        
+
         # Create snapshot for rollback
         if (enable_rollback if enable_rollback is not None else self.enable_rollback):
             self._create_snapshot(session_id)
-        
+
         # Dry-run mode
         if dry_run:
             firejail_cmd = self._create_firejail_command(command)
             preview = ' '.join(shlex.quote(arg) for arg in firejail_cmd)
-            
+
             result = ExecutionResult(
                 command=command,
                 exit_code=0,
@@ -526,13 +526,13 @@ class SandboxExecutor:
             )
             self._log_execution(result)
             return result
-        
+
         # Execute command
         try:
             firejail_cmd = self._create_firejail_command(command)
-            
+
             self.logger.info(f"Executing: {command}")
-            
+
             # Set resource limits if not using Firejail
             preexec_fn = None
             if not self.firejail_path:
@@ -551,7 +551,7 @@ class SandboxExecutor:
                     except (ValueError, OSError) as e:
                         self.logger.warning(f"Failed to set resource limits: {e}")
                 preexec_fn = set_resource_limits
-            
+
             process = subprocess.Popen(
                 firejail_cmd,
                 stdout=subprocess.PIPE,
@@ -559,11 +559,11 @@ class SandboxExecutor:
                 text=True,
                 preexec_fn=preexec_fn
             )
-            
+
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
             exit_code = process.returncode
             execution_time = time.time() - start_time
-            
+
             result = ExecutionResult(
                 command=command,
                 exit_code=exit_code,
@@ -571,15 +571,15 @@ class SandboxExecutor:
                 stderr=stderr,
                 execution_time=execution_time
             )
-            
+
             # Rollback on failure if enabled
             if result.failed and (enable_rollback if enable_rollback is not None else self.enable_rollback):
                 self._rollback(session_id)
                 result.stderr += "\n[ROLLBACK] Changes reverted due to failure"
-            
+
             self._log_execution(result)
             return result
-            
+
         except subprocess.TimeoutExpired:
             process.kill()
             result = ExecutionResult(
@@ -590,7 +590,7 @@ class SandboxExecutor:
             )
             self._log_execution(result)
             return result
-            
+
         except Exception as e:
             result = ExecutionResult(
                 command=command,
@@ -600,22 +600,22 @@ class SandboxExecutor:
             )
             self._log_execution(result)
             return result
-    
+
     def _log_execution(self, result: ExecutionResult):
         """Log command execution to audit log."""
         log_entry = result.to_dict()
         log_entry['type'] = 'execution'
         self.audit_log.append(log_entry)
         self.logger.info(f"Command executed: {result.command} (exit_code={result.exit_code})")
-    
+
     def _log_security_event(self, result: ExecutionResult):
         """Log security violation."""
         log_entry = result.to_dict()
         log_entry['type'] = 'security_violation'
         self.audit_log.append(log_entry)
         self.logger.warning(f"Security violation: {result.command} - {result.violation}")
-    
-    def get_audit_log(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+
+    def get_audit_log(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get audit log entries.
         
@@ -628,8 +628,8 @@ class SandboxExecutor:
         if limit:
             return self.audit_log[-limit:]
         return self.audit_log.copy()
-    
-    def save_audit_log(self, file_path: Optional[str] = None):
+
+    def save_audit_log(self, file_path: str | None = None):
         """Save audit log to file."""
         file_path = file_path or self.log_file.replace('.log', '_audit.json')
         with open(file_path, 'w') as f:
@@ -639,35 +639,35 @@ class SandboxExecutor:
 def main():
     """CLI entry point for sandbox executor."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Sandboxed Command Executor')
     parser.add_argument('command', help='Command to execute')
     parser.add_argument('--dry-run', action='store_true', help='Dry-run mode')
     parser.add_argument('--no-rollback', action='store_true', help='Disable rollback')
     parser.add_argument('--timeout', type=int, default=300, help='Timeout in seconds')
-    
+
     args = parser.parse_args()
-    
+
     executor = SandboxExecutor(timeout_seconds=args.timeout)
-    
+
     try:
         result = executor.execute(
             args.command,
             dry_run=args.dry_run,
             enable_rollback=not args.no_rollback
         )
-        
+
         if result.blocked:
             print(f"Command blocked: {result.violation}", file=sys.stderr)
             sys.exit(1)
-        
+
         if result.stdout:
             print(result.stdout)
         if result.stderr:
             print(result.stderr, file=sys.stderr)
-        
+
         sys.exit(result.exit_code)
-        
+
     except CommandBlocked as e:
         print(f"Command blocked: {e}", file=sys.stderr)
         sys.exit(1)

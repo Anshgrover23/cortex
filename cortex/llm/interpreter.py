@@ -1,8 +1,8 @@
-import os
 import json
+import os
 import sqlite3
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from enum import Enum
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from cortex.semantic_cache import SemanticCache
@@ -20,12 +20,12 @@ class CommandInterpreter:
     Supports multiple providers (OpenAI, Claude, Ollama) with optional semantic caching
     and offline mode for cached responses.
     """
-    
+
     def __init__(
         self,
         api_key: str,
         provider: str = "openai",
-        model: Optional[str] = None,
+        model: str | None = None,
         offline: bool = False,
         cache: Optional["SemanticCache"] = None,
     ):
@@ -46,13 +46,13 @@ class CommandInterpreter:
             try:
                 from cortex.semantic_cache import SemanticCache
 
-                self.cache: Optional["SemanticCache"] = SemanticCache()
-            except (ImportError, OSError) as e:
+                self.cache: SemanticCache | None = SemanticCache()
+            except (ImportError, OSError):
                 # Cache initialization can fail due to missing dependencies or permissions
                 self.cache = None
         else:
             self.cache = cache
-        
+
         if model:
             self.model = model
         else:
@@ -64,7 +64,7 @@ class CommandInterpreter:
                 self.model = "llama3.2"  # Default Ollama model
 
         self._initialize_client()
-    
+
     def _initialize_client(self):
         if self.provider == APIProvider.OPENAI:
             try:
@@ -82,7 +82,7 @@ class CommandInterpreter:
             # Ollama uses local HTTP API, no special client needed
             self.ollama_url = os.environ.get('OLLAMA_HOST', 'http://localhost:11434')
             self.client = None  # Will use requests
-    
+
     def _get_system_prompt(self) -> str:
         return """You are a Linux system command expert. Convert natural language requests into safe, validated bash commands.
 
@@ -100,8 +100,8 @@ Format:
 
 Example request: "install docker with nvidia support"
 Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.io", "sudo apt install -y nvidia-docker2", "sudo systemctl restart docker"]}"""
-    
-    def _call_openai(self, user_input: str) -> List[str]:
+
+    def _call_openai(self, user_input: str) -> list[str]:
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -112,13 +112,13 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
                 temperature=0.3,
                 max_tokens=1000
             )
-            
+
             content = response.choices[0].message.content.strip()
             return self._parse_commands(content)
         except Exception as e:
             raise RuntimeError(f"OpenAI API call failed: {str(e)}")
-    
-    def _call_claude(self, user_input: str) -> List[str]:
+
+    def _call_claude(self, user_input: str) -> list[str]:
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -135,10 +135,10 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
         except Exception as e:
             raise RuntimeError(f"Claude API call failed: {str(e)}")
 
-    def _call_ollama(self, user_input: str) -> List[str]:
+    def _call_ollama(self, user_input: str) -> list[str]:
         """Call local Ollama instance for offline/local inference"""
-        import urllib.request
         import urllib.error
+        import urllib.request
 
         try:
             url = f"{self.ollama_url}/api/generate"
@@ -168,25 +168,25 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
             raise RuntimeError(f"Ollama not available at {self.ollama_url}: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"Ollama API call failed: {str(e)}")
-    
-    def _parse_commands(self, content: str) -> List[str]:
+
+    def _parse_commands(self, content: str) -> list[str]:
         try:
             if content.startswith("```json"):
                 content = content.split("```json")[1].split("```")[0].strip()
             elif content.startswith("```"):
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             data = json.loads(content)
             commands = data.get("commands", [])
-            
+
             if not isinstance(commands, list):
                 raise ValueError("Commands must be a list")
-            
+
             return [cmd for cmd in commands if cmd and isinstance(cmd, str)]
         except (json.JSONDecodeError, ValueError) as e:
             raise ValueError(f"Failed to parse LLM response: {str(e)}")
-    
-    def _validate_commands(self, commands: List[str]) -> List[str]:
+
+    def _validate_commands(self, commands: list[str]) -> list[str]:
         dangerous_patterns = [
             "rm -rf /",
             "dd if=",
@@ -195,17 +195,17 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
             "fork bomb",
             ":(){ :|:& };:",
         ]
-        
+
         validated = []
         for cmd in commands:
             cmd_lower = cmd.lower()
             if any(pattern in cmd_lower for pattern in dangerous_patterns):
                 continue
             validated.append(cmd)
-        
+
         return validated
-    
-    def parse(self, user_input: str, validate: bool = True) -> List[str]:
+
+    def parse(self, user_input: str, validate: bool = True) -> list[str]:
         """Parse natural language input into shell commands.
         
         Args:
@@ -236,7 +236,7 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
 
         if self.offline:
             raise RuntimeError("Offline mode: no cached response available for this request")
-        
+
         if self.provider == APIProvider.OPENAI:
             commands = self._call_openai(user_input)
         elif self.provider == APIProvider.CLAUDE:
@@ -245,7 +245,7 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
             commands = self._call_ollama(user_input)
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
-        
+
         if validate:
             commands = self._validate_commands(commands)
 
@@ -261,18 +261,18 @@ Example response: {"commands": ["sudo apt update", "sudo apt install -y docker.i
             except (OSError, sqlite3.Error):
                 # Silently fail cache writes - not critical for operation
                 pass
-        
+
         return commands
-    
+
     def parse_with_context(
         self,
         user_input: str,
-        system_info: Optional[Dict[str, Any]] = None,
+        system_info: dict[str, Any] | None = None,
         validate: bool = True
-    ) -> List[str]:
+    ) -> list[str]:
         context = ""
         if system_info:
             context = f"\n\nSystem context: {json.dumps(system_info)}"
-        
+
         enriched_input = user_input + context
         return self.parse(enriched_input, validate=validate)

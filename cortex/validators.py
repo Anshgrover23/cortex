@@ -6,19 +6,18 @@ Validates user input and provides helpful error messages.
 
 import os
 import re
-from typing import Optional, Tuple
 
 
 class ValidationError(Exception):
     """Custom exception for validation errors with user-friendly messages"""
 
-    def __init__(self, message: str, suggestion: Optional[str] = None):
+    def __init__(self, message: str, suggestion: str | None = None):
         self.message = message
         self.suggestion = suggestion
         super().__init__(message)
 
 
-def validate_api_key() -> Tuple[bool, Optional[str], Optional[str]]:
+def validate_api_key() -> tuple[bool, str | None, str | None]:
     """
     Validate that an API key is configured.
 
@@ -41,7 +40,7 @@ def validate_api_key() -> Tuple[bool, Optional[str], Optional[str]]:
     return (False, None, "No API key found. Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable.")
 
 
-def validate_package_name(name: str) -> Tuple[bool, Optional[str]]:
+def validate_package_name(name: str) -> tuple[bool, str | None]:
     """
     Validate a package name for safety.
 
@@ -69,7 +68,7 @@ def validate_package_name(name: str) -> Tuple[bool, Optional[str]]:
     return (True, None)
 
 
-def validate_install_request(request: str) -> Tuple[bool, Optional[str]]:
+def validate_install_request(request: str) -> tuple[bool, str | None]:
     """
     Validate a natural language install request.
 
@@ -99,7 +98,7 @@ def validate_install_request(request: str) -> Tuple[bool, Optional[str]]:
     return (True, None)
 
 
-def validate_installation_id(install_id: str) -> Tuple[bool, Optional[str]]:
+def validate_installation_id(install_id: str) -> tuple[bool, str | None]:
     """
     Validate an installation ID format.
 

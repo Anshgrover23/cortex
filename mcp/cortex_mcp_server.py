@@ -9,15 +9,13 @@ Connects Claude, ChatGPT, Cursor, VS Code to Cortex Linux.
 import asyncio
 import json
 import logging
-import os
 import subprocess
 from datetime import datetime
-from typing import Optional
 
 try:
     from mcp.server import Server
     from mcp.server.stdio import stdio_server
-    from mcp.types import Tool, TextContent, CallToolResult, ListToolsResult
+    from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 except ImportError:
     print("MCP SDK not installed. Run: pip install mcp[cli]")
     import sys
@@ -167,7 +165,7 @@ class CortexMCPServer:
         )
         stdout, _ = await process.communicate()
         lines = stdout.decode("utf-8").strip().split("\n")[:limit]
-        packages = [{"name": l.split(" - ")[0], "description": l.split(" - ")[1]} 
+        packages = [{"name": l.split(" - ")[0], "description": l.split(" - ")[1]}
                    for l in lines if " - " in l]
         return {"query": query, "count": len(packages), "packages": packages}
 
@@ -192,7 +190,7 @@ class CortexMCPServer:
                         break
         except:
             hardware["cpu"] = "Unknown"
-        
+
         try:
             process = await asyncio.create_subprocess_exec(
                 "nvidia-smi", "--query-gpu=name", "--format=csv,noheader",
@@ -203,7 +201,7 @@ class CortexMCPServer:
                 hardware["gpu"] = stdout.decode("utf-8").strip()
         except:
             hardware["gpu"] = None
-        
+
         return hardware
 
     async def _system_status(self) -> dict:

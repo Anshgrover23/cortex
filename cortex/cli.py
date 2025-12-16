@@ -1,9 +1,8 @@
-import sys
-import os
 import argparse
-import time
 import logging
-from typing import List, Optional
+import os
+import sys
+import time
 from datetime import datetime
 
 # Suppress noisy log messages in normal operation
@@ -12,34 +11,22 @@ logging.getLogger("cortex.installation_history").setLevel(logging.ERROR)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from cortex.llm.interpreter import CommandInterpreter
+from cortex.branding import VERSION, console, cx_header, cx_print, show_banner
 from cortex.coordinator import InstallationCoordinator, StepStatus
-from cortex.installation_history import (
-    InstallationHistory,
-    InstallationType,
-    InstallationStatus
-)
+from cortex.installation_history import InstallationHistory, InstallationStatus, InstallationType
+from cortex.llm.interpreter import CommandInterpreter
+
+# Import the new Notification Manager
+from cortex.notification_manager import NotificationManager
 from cortex.user_preferences import (
     PreferencesManager,
+    format_preference_value,
     print_all_preferences,
-    format_preference_value
-)
-from cortex.branding import (
-    console,
-    cx_print,
-    cx_step,
-    cx_header,
-    show_banner,
-    VERSION
 )
 from cortex.validators import (
     validate_api_key,
     validate_install_request,
-    validate_installation_id,
-    ValidationError
 )
-# Import the new Notification Manager
-from cortex.notification_manager import NotificationManager
 
 
 class CortexCLI:
@@ -55,7 +42,7 @@ class CortexCLI:
         if self.verbose:
             console.print(f"[dim][DEBUG] {message}[/dim]")
 
-    def _get_api_key(self) -> Optional[str]:
+    def _get_api_key(self) -> str | None:
         # Check if using Ollama (no API key needed)
         provider = self._get_provider()
         if provider == 'ollama':
@@ -135,7 +122,7 @@ class CortexCLI:
             mgr.config["enabled"] = True
             # Addressing CodeRabbit feedback: Ideally should use a public method instead of private _save_config,
             # but keeping as is for a simple fix (or adding a save method to NotificationManager would be best).
-            mgr._save_config() 
+            mgr._save_config()
             self._print_success("Notifications enabled")
             return 0
 
@@ -149,7 +136,7 @@ class CortexCLI:
             if not args.start or not args.end:
                 self._print_error("Please provide start and end times (HH:MM)")
                 return 1
-            
+
             # Addressing CodeRabbit feedback: Add time format validation
             try:
                 datetime.strptime(args.start, "%H:%M")
@@ -168,10 +155,10 @@ class CortexCLI:
             if not args.message:
                 self._print_error("Message required")
                 return 1
-            console.print(f"[dim]Sending notification...[/dim]")
+            console.print("[dim]Sending notification...[/dim]")
             mgr.send(args.title, args.message, level=args.level, actions=args.actions)
             return 0
-        
+
         else:
             self._print_error("Unknown notify command")
             return 1
@@ -330,7 +317,7 @@ class CortexCLI:
             self._print_error(f"Unable to read cache stats: {e}")
             return 1
 
-    def history(self, limit: int = 20, status: Optional[str] = None, show_id: Optional[str] = None):
+    def history(self, limit: int = 20, status: str | None = None, show_id: str | None = None):
         """Show installation history"""
         history = InstallationHistory()
 
@@ -358,7 +345,7 @@ class CortexCLI:
                     print(f"\nError: {record.error_message}")
 
                 if record.commands_executed:
-                    print(f"\nCommands executed:")
+                    print("\nCommands executed:")
                     for cmd in record.commands_executed:
                         print(f"  {cmd}")
 
@@ -416,7 +403,7 @@ class CortexCLI:
             self.prefs_manager = PreferencesManager()
         return self.prefs_manager
 
-    def check_pref(self, key: Optional[str] = None):
+    def check_pref(self, key: str | None = None):
         """Check/display user preferences"""
         manager = self._get_prefs_manager()
 
@@ -439,7 +426,7 @@ class CortexCLI:
             self._print_error(f"Failed to read preferences: {str(e)}")
             return 1
 
-    def edit_pref(self, action: str, key: Optional[str] = None, value: Optional[str] = None):
+    def edit_pref(self, action: str, key: str | None = None, value: str | None = None):
         """Edit user preferences (add/set, delete/remove, list)"""
         manager = self._get_prefs_manager()
 
@@ -471,7 +458,7 @@ class CortexCLI:
                     manager.reset()
                     self._print_success("Preferences reset")
                 return 0
-            
+
             elif action == 'validate':
                  errors = manager.validate()
                  if errors:

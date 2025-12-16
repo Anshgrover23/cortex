@@ -1,5 +1,5 @@
-import pytest
-from cortex.kernel_features.model_lifecycle import ModelConfig, ModelLifecycleManager
+from cortex.kernel_features.model_lifecycle import ModelConfig
+
 
 def test_model_config_defaults():
     cfg = ModelConfig("test", "/path/to/model")

@@ -45,5 +45,4 @@ source "{script_path}"
 
     else:
         raise RuntimeError("Unsupported shell. Only bash and zsh are supported.")
-    
-    
+

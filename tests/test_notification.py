@@ -1,24 +1,25 @@
-import unittest
-import json
 import datetime
+import json
 import shutil
-from unittest.mock import patch, MagicMock
+import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # Import the class to be tested
 from cortex.notification_manager import NotificationManager
+
 
 class TestNotificationManager(unittest.TestCase):
     def setUp(self):
         """Setup temporary environment for testing."""
         self.mgr = NotificationManager()
-        
+
         # Use a temporary directory
         self.mgr.config_dir = Path("./test_cortex_config")
         self.mgr.config_dir.mkdir(exist_ok=True)
         self.mgr.history_file = self.mgr.config_dir / "test_history.json"
         self.mgr.config_file = self.mgr.config_dir / "test_config.json"
-        
+
         # Default config
         self.mgr.config = {
             "dnd_start": "22:00",
@@ -53,18 +54,18 @@ class TestNotificationManager(unittest.TestCase):
         """
         # Mock environment
         mock_which.return_value = "/usr/bin/notify-send"
-        
+
         # Disable DND
         with patch.object(self.mgr, '_get_current_time') as mock_time:
             mock_time.return_value = datetime.time(12, 0)
-            
+
             # Send with actions
             actions = ["View Logs", "Retry"]
             self.mgr.send("Action Test", "Testing buttons", actions=actions)
-            
+
             # Verify command execution
             mock_run.assert_called_once()
-            
+
             # Check if arguments contain the actions
             args = mock_run.call_args[0][0]
             self.assertIn("notify-send", args)
@@ -75,10 +76,10 @@ class TestNotificationManager(unittest.TestCase):
     def test_history_logging(self):
         """Test logging."""
         self.mgr.send("History Test", "Logging check")
-        
-        with open(self.mgr.history_file, 'r') as f:
+
+        with open(self.mgr.history_file) as f:
             data = json.load(f)
-            
+
         self.assertTrue(len(data) > 0)
         self.assertEqual(data[-1]['title'], "History Test")
 

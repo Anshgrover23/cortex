@@ -4,15 +4,15 @@ User Preferences & Settings System
 Manages persistent user preferences and configuration for Cortex Linux
 """
 
-import os
 import json
-import yaml
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass, asdict, field
-from enum import Enum
 import shutil
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 class PreferencesError(Exception):
@@ -66,7 +66,7 @@ class AISettings:
 @dataclass
 class PackageSettings:
     """Package management preferences"""
-    default_sources: List[str] = field(default_factory=lambda: ["official"])
+    default_sources: list[str] = field(default_factory=lambda: ["official"])
     prefer_latest: bool = False
     auto_cleanup: bool = True
     backup_before_changes: bool = True
@@ -87,8 +87,8 @@ class UserPreferences:
 
 class PreferencesManager:
     """Manages user preferences with YAML storage"""
-    
-    def __init__(self, config_path: Optional[Path] = None):
+
+    def __init__(self, config_path: Path | None = None):
         """
         Initialize preferences manager
         
@@ -102,21 +102,21 @@ class PreferencesManager:
             config_dir = Path.home() / ".config" / "cortex"
             config_dir.mkdir(parents=True, exist_ok=True)
             self.config_path = config_dir / "preferences.yaml"
-        
+
         self.preferences: UserPreferences = UserPreferences()
         self.load()
-    
+
     def load(self) -> UserPreferences:
         """Load preferences from YAML file"""
         if not self.config_path.exists():
             # Create default config file
             self.save()
             return self.preferences
-        
+
         try:
-            with open(self.config_path, 'r') as f:
+            with open(self.config_path) as f:
                 data = yaml.safe_load(f) or {}
-            
+
             # Parse nested structures
             self.preferences = UserPreferences(
                 verbosity=VerbosityLevel(data.get('verbosity', 'normal')),
@@ -131,24 +131,24 @@ class PreferencesManager:
                 language=data.get('language', 'en'),
                 timezone=data.get('timezone', 'UTC')
             )
-            
+
             return self.preferences
-            
+
         except Exception as e:
             print(f"[WARNING] Could not load preferences: {e}")
             print("[INFO] Using default preferences")
             return self.preferences
-    
+
     def save(self) -> None:
         """Save preferences to YAML file with backup"""
         # Create backup if file exists
         if self.config_path.exists():
             backup_path = self.config_path.with_suffix('.yaml.bak')
             shutil.copy2(self.config_path, backup_path)
-        
+
         # Ensure directory exists
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Convert to dict
         data = {
             'verbosity': self.preferences.verbosity.value,
@@ -163,21 +163,21 @@ class PreferencesManager:
             'language': self.preferences.language,
             'timezone': self.preferences.timezone
         }
-        
+
         # Write atomically (write to temp, then rename)
         temp_path = self.config_path.with_suffix('.yaml.tmp')
         try:
             with open(temp_path, 'w') as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-            
+
             # Atomic rename
             temp_path.replace(self.config_path)
-            
+
         except Exception as e:
             if temp_path.exists():
                 temp_path.unlink()
             raise PreferencesError(f"Failed to save preferences: {e}") from e
-    
+
     def get(self, key: str, default: Any = None) -> Any:
         """
         Get preference value by dot notation key
@@ -191,14 +191,14 @@ class PreferencesManager:
         """
         parts = key.split('.')
         obj = self.preferences
-        
+
         try:
             for part in parts:
                 obj = getattr(obj, part)
             return obj
         except AttributeError:
             return default
-    
+
     def set(self, key: str, value: Any) -> None:
         """
         Set preference value by dot notation key
@@ -209,15 +209,15 @@ class PreferencesManager:
         """
         parts = key.split('.')
         obj = self.preferences
-        
+
         # Navigate to parent object
         for part in parts[:-1]:
             obj = getattr(obj, part)
-        
+
         # Set the final attribute
         attr_name = parts[-1]
         current_value = getattr(obj, attr_name)
-        
+
         # Type coercion
         if isinstance(current_value, bool):
             if isinstance(value, str):
@@ -231,16 +231,16 @@ class PreferencesManager:
             # Convert string to enum
             enum_class = type(current_value)
             value = enum_class(value)
-        
+
         setattr(obj, attr_name, value)
         self.save()
-    
+
     def reset(self) -> None:
         """Reset all preferences to defaults"""
         self.preferences = UserPreferences()
         self.save()
-    
-    def validate(self) -> List[str]:
+
+    def validate(self) -> list[str]:
         """
         Validate current preferences
         
@@ -248,24 +248,24 @@ class PreferencesManager:
             List of validation error messages (empty if valid)
         """
         errors = []
-        
+
         # Validate AI settings
         if self.preferences.ai.max_suggestions < 1:
             errors.append("ai.max_suggestions must be at least 1")
         if self.preferences.ai.max_suggestions > 20:
             errors.append("ai.max_suggestions must not exceed 20")
-        
+
         # Validate auto-update frequency
         if self.preferences.auto_update.frequency_hours < 1:
             errors.append("auto_update.frequency_hours must be at least 1")
-        
+
         # Validate language code
         valid_languages = ['en', 'es', 'fr', 'de', 'ja', 'zh', 'pt', 'ru']
         if self.preferences.language not in valid_languages:
             errors.append(f"language must be one of: {', '.join(valid_languages)}")
-        
+
         return errors
-    
+
     def export_json(self, filepath: Path) -> None:
         """Export preferences to JSON file"""
         data = {
@@ -282,20 +282,20 @@ class PreferencesManager:
             'timezone': self.preferences.timezone,
             'exported_at': datetime.now().isoformat()
         }
-        
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
-        
+
         print(f"[SUCCESS] Configuration exported to {filepath}")
-    
+
     def import_json(self, filepath: Path) -> None:
         """Import preferences from JSON file"""
-        with open(filepath, 'r') as f:
+        with open(filepath) as f:
             data = json.load(f)
-        
+
         # Remove metadata
         data.pop('exported_at', None)
-        
+
         # Update preferences
         self.preferences = UserPreferences(
             verbosity=VerbosityLevel(data.get('verbosity', 'normal')),
@@ -310,11 +310,11 @@ class PreferencesManager:
             language=data.get('language', 'en'),
             timezone=data.get('timezone', 'UTC')
         )
-        
+
         self.save()
         print(f"[SUCCESS] Configuration imported from {filepath}")
-    
-    def get_all_settings(self) -> Dict[str, Any]:
+
+    def get_all_settings(self) -> dict[str, Any]:
         """Get all settings as a flat dictionary"""
         return {
             'verbosity': self.preferences.verbosity.value,
@@ -329,8 +329,8 @@ class PreferencesManager:
             'language': self.preferences.language,
             'timezone': self.preferences.timezone
         }
-    
-    def get_config_info(self) -> Dict[str, Any]:
+
+    def get_config_info(self) -> dict[str, Any]:
         """Get configuration metadata"""
         return {
             'config_path': str(self.config_path),
@@ -360,7 +360,7 @@ def format_preference_value(value: Any) -> str:
 def print_all_preferences(manager: PreferencesManager) -> None:
     """Print all preferences in a formatted way"""
     settings = manager.get_all_settings()
-    
+
     print("\n[INFO] Current Configuration:")
     print("=" * 60)
     print(yaml.dump(settings, default_flow_style=False, sort_keys=False))

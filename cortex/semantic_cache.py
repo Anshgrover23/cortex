@@ -4,15 +4,14 @@ Provides semantic similarity matching for cached responses to reduce API calls
 and enable offline operation.
 """
 
+import hashlib
 import json
+import math
 import os
 import sqlite3
-import hashlib
-import math
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -48,8 +47,8 @@ class SemanticCache:
     def __init__(
         self,
         db_path: str = "/var/lib/cortex/cache.db",
-        max_entries: Optional[int] = None,
-        similarity_threshold: Optional[float] = None,
+        max_entries: int | None = None,
+        similarity_threshold: float | None = None,
     ):
         """Initialize semantic cache.
         
@@ -136,9 +135,9 @@ class SemanticCache:
         return self._hash_text(system_prompt)
 
     @staticmethod
-    def _tokenize(text: str) -> List[str]:
-        buf: List[str] = []
-        current: List[str] = []
+    def _tokenize(text: str) -> list[str]:
+        buf: list[str] = []
+        current: list[str] = []
         for ch in text.lower():
             if ch.isalnum() or ch in ("-", "_", "."):
                 current.append(ch)
@@ -151,7 +150,7 @@ class SemanticCache:
         return buf
 
     @classmethod
-    def _embed(cls, text: str, dims: int = 128) -> List[float]:
+    def _embed(cls, text: str, dims: int = 128) -> list[float]:
         vec = [0.0] * dims
         tokens = cls._tokenize(text)
         if not tokens:
@@ -170,15 +169,15 @@ class SemanticCache:
         return vec
 
     @staticmethod
-    def _pack_embedding(vec: List[float]) -> bytes:
+    def _pack_embedding(vec: list[float]) -> bytes:
         return json.dumps(vec, separators=(",", ":")).encode("utf-8")
 
     @staticmethod
-    def _unpack_embedding(blob: bytes) -> List[float]:
+    def _unpack_embedding(blob: bytes) -> list[float]:
         return json.loads(blob.decode("utf-8"))
 
     @staticmethod
-    def _cosine(a: List[float], b: List[float]) -> float:
+    def _cosine(a: list[float], b: list[float]) -> float:
         if not a or not b or len(a) != len(b):
             return 0.0
         dot = 0.0
@@ -199,7 +198,7 @@ class SemanticCache:
         model: str,
         system_prompt: str,
         candidate_limit: int = 200,
-    ) -> Optional[List[str]]:
+    ) -> list[str] | None:
         """Retrieve cached commands for a prompt.
         
         First tries exact match, then falls back to semantic similarity search.
@@ -258,7 +257,7 @@ class SemanticCache:
                 (provider, model, system_hash, candidate_limit),
             )
 
-            best: Optional[Tuple[int, float, str]] = None
+            best: tuple[int, float, str] | None = None
             for entry_id, embedding_blob, commands_json in cur.fetchall():
                 vec = self._unpack_embedding(embedding_blob)
                 sim = self._cosine(query_vec, vec)
@@ -290,7 +289,7 @@ class SemanticCache:
         provider: str,
         model: str,
         system_prompt: str,
-        commands: List[str],
+        commands: list[str],
     ) -> None:
         """Store commands in cache for future retrieval.
         

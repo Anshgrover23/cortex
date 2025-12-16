@@ -5,12 +5,11 @@ This module provides safe command execution with validation and sandboxing.
 All commands should go through these utilities to prevent shell injection.
 """
 
-import subprocess
-import shlex
-import re
-from typing import List, Tuple, Optional
-from dataclasses import dataclass
 import logging
+import re
+import shlex
+import subprocess
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +135,7 @@ class CommandValidationError(Exception):
     pass
 
 
-def validate_command(command: str, strict: bool = True) -> Tuple[bool, Optional[str]]:
+def validate_command(command: str, strict: bool = True) -> tuple[bool, str | None]:
     """
     Validate a command for security.
 
@@ -182,9 +181,9 @@ def validate_command(command: str, strict: bool = True) -> Tuple[bool, Optional[
                 continue
             elif char == ';':
                 # Semicolon is dangerous - could chain arbitrary commands
-                return False, f"Semicolon not allowed in commands"
+                return False, "Semicolon not allowed in commands"
             elif char == '`':
-                return False, f"Backtick command substitution not allowed"
+                return False, "Backtick command substitution not allowed"
 
     # Strict mode: command must start with allowed prefix
     if strict:
@@ -229,7 +228,7 @@ def run_command(
     validate: bool = True,
     use_shell: bool = False,
     capture_output: bool = True,
-    cwd: Optional[str] = None
+    cwd: str | None = None
 ) -> CommandResult:
     """
     Execute a command safely with validation.
@@ -317,10 +316,10 @@ def run_command(
 
 
 def run_command_chain(
-    commands: List[str],
+    commands: list[str],
     timeout_per_command: int = 300,
     stop_on_error: bool = True
-) -> List[CommandResult]:
+) -> list[CommandResult]:
     """
     Execute a chain of commands safely.
 

@@ -7,17 +7,17 @@ through initial setup, configuration, and feature discovery.
 Issue: #256
 """
 
-import os
-import sys
 import json
+import logging
+import os
 import shutil
 import subprocess
-from typing import Optional, Dict, Any, List, Callable
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 from enum import Enum
-import logging
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -37,27 +37,27 @@ class WizardStep(Enum):
 class WizardState:
     """Tracks the current state of the wizard."""
     current_step: WizardStep = WizardStep.WELCOME
-    completed_steps: List[WizardStep] = field(default_factory=list)
-    skipped_steps: List[WizardStep] = field(default_factory=list)
-    collected_data: Dict[str, Any] = field(default_factory=dict)
+    completed_steps: list[WizardStep] = field(default_factory=list)
+    skipped_steps: list[WizardStep] = field(default_factory=list)
+    collected_data: dict[str, Any] = field(default_factory=dict)
     started_at: datetime = field(default_factory=datetime.now)
-    completed_at: Optional[datetime] = None
-    
+    completed_at: datetime | None = None
+
     def mark_completed(self, step: WizardStep):
         """Mark a step as completed."""
         if step not in self.completed_steps:
             self.completed_steps.append(step)
-    
+
     def mark_skipped(self, step: WizardStep):
         """Mark a step as skipped."""
         if step not in self.skipped_steps:
             self.skipped_steps.append(step)
-    
+
     def is_completed(self, step: WizardStep) -> bool:
         """Check if a step is completed."""
         return step in self.completed_steps
-    
-    def to_dict(self) -> Dict[str, Any]:
+
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to dict."""
         return {
             "current_step": self.current_step.value,
@@ -67,9 +67,9 @@ class WizardState:
             "started_at": self.started_at.isoformat(),
             "completed_at": self.completed_at.isoformat() if self.completed_at else None
         }
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WizardState":
+    def from_dict(cls, data: dict[str, Any]) -> "WizardState":
         """Deserialize from dict."""
         return cls(
             current_step=WizardStep(data.get("current_step", "welcome")),
@@ -86,9 +86,9 @@ class StepResult:
     """Result of a wizard step."""
     success: bool
     message: str = ""
-    data: Dict[str, Any] = field(default_factory=dict)
-    next_step: Optional[WizardStep] = None
-    skip_to: Optional[WizardStep] = None
+    data: dict[str, Any] = field(default_factory=dict)
+    next_step: WizardStep | None = None
+    skip_to: WizardStep | None = None
 
 
 class FirstRunWizard:
@@ -103,26 +103,26 @@ class FirstRunWizard:
     5. Shell integration
     6. Test command
     """
-    
+
     CONFIG_DIR = Path.home() / ".cortex"
     STATE_FILE = CONFIG_DIR / "wizard_state.json"
     CONFIG_FILE = CONFIG_DIR / "config.json"
     SETUP_COMPLETE_FILE = CONFIG_DIR / ".setup_complete"
-    
+
     def __init__(self, interactive: bool = True):
         self.interactive = interactive
         self.state = WizardState()
-        self.config: Dict[str, Any] = {}
+        self.config: dict[str, Any] = {}
         self._ensure_config_dir()
-    
+
     def _ensure_config_dir(self):
         """Ensure config directory exists."""
         self.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     def needs_setup(self) -> bool:
         """Check if first-run setup is needed."""
         return not self.SETUP_COMPLETE_FILE.exists()
-    
+
     def load_state(self) -> bool:
         """Load wizard state from file."""
         if self.STATE_FILE.exists():
@@ -134,7 +134,7 @@ class FirstRunWizard:
             except Exception as e:
                 logger.warning(f"Could not load wizard state: {e}")
         return False
-    
+
     def save_state(self):
         """Save wizard state to file."""
         try:
@@ -142,7 +142,7 @@ class FirstRunWizard:
                 json.dump(self.state.to_dict(), f, indent=2)
         except Exception as e:
             logger.warning(f"Could not save wizard state: {e}")
-    
+
     def save_config(self):
         """Save configuration to file."""
         try:
@@ -150,13 +150,13 @@ class FirstRunWizard:
                 json.dump(self.config, f, indent=2)
         except Exception as e:
             logger.warning(f"Could not save config: {e}")
-    
+
     def mark_setup_complete(self):
         """Mark setup as complete."""
         self.SETUP_COMPLETE_FILE.touch()
         self.state.completed_at = datetime.now()
         self.save_state()
-    
+
     def run(self) -> bool:
         """
         Run the complete wizard.
@@ -166,10 +166,10 @@ class FirstRunWizard:
         """
         if not self.needs_setup():
             return True
-        
+
         # Load any existing state
         self.load_state()
-        
+
         # Define step handlers
         steps = [
             (WizardStep.WELCOME, self._step_welcome),
@@ -180,25 +180,25 @@ class FirstRunWizard:
             (WizardStep.TEST_COMMAND, self._step_test_command),
             (WizardStep.COMPLETE, self._step_complete),
         ]
-        
+
         # Find starting point
         start_idx = 0
         for i, (step, _) in enumerate(steps):
             if step == self.state.current_step:
                 start_idx = i
                 break
-        
+
         # Run steps
         for step, handler in steps[start_idx:]:
             self.state.current_step = step
             self.save_state()
-            
+
             result = handler()
-            
+
             if result.success:
                 self.state.mark_completed(step)
                 self.state.collected_data.update(result.data)
-                
+
                 if result.skip_to:
                     # Skip to a specific step
                     for s, _ in steps:
@@ -214,15 +214,15 @@ class FirstRunWizard:
                     # Fatal error
                     self._print_error(f"Setup failed: {result.message}")
                     return False
-        
+
         self.mark_setup_complete()
         return True
-    
+
     def _step_welcome(self) -> StepResult:
         """Welcome step with introduction."""
         self._clear_screen()
         self._print_banner()
-        
+
         print("""
 Welcome to Cortex Linux! 🚀
 
@@ -235,19 +235,19 @@ Instead of memorizing apt commands, just tell Cortex what you want:
 
 This wizard will help you set up Cortex in just a few minutes.
 """)
-        
+
         if self.interactive:
             response = self._prompt("Press Enter to continue (or 'q' to quit): ")
             if response.lower() == 'q':
                 return StepResult(success=False, message="User cancelled")
-        
+
         return StepResult(success=True)
-    
+
     def _step_api_setup(self) -> StepResult:
         """API key configuration step."""
         self._clear_screen()
         self._print_header("Step 1: API Configuration")
-        
+
         print("""
 Cortex uses AI to understand your commands. You can use:
 
@@ -256,11 +256,11 @@ Cortex uses AI to understand your commands. You can use:
   3. Local LLM (Ollama) - Free, runs on your machine
   4. Skip for now (limited functionality)
 """)
-        
+
         # Check for existing API keys
         existing_claude = os.environ.get("ANTHROPIC_API_KEY")
         existing_openai = os.environ.get("OPENAI_API_KEY")
-        
+
         if existing_claude:
             print("✓ Found existing Claude API key: ********...")
             self.config["api_provider"] = "anthropic"
@@ -269,7 +269,7 @@ Cortex uses AI to understand your commands. You can use:
                 success=True,
                 data={"api_provider": "anthropic"}
             )
-        
+
         if existing_openai:
             print("✓ Found existing OpenAI API key: ********...")
             self.config["api_provider"] = "openai"
@@ -278,16 +278,16 @@ Cortex uses AI to understand your commands. You can use:
                 success=True,
                 data={"api_provider": "openai"}
             )
-        
+
         if not self.interactive:
             return StepResult(
                 success=True,
                 message="Non-interactive mode - skipping API setup",
                 data={"api_provider": "none"}
             )
-        
+
         choice = self._prompt("Choose an option [1-4]: ", default="1")
-        
+
         if choice == "1":
             return self._setup_claude_api()
         elif choice == "2":
@@ -300,63 +300,63 @@ Cortex uses AI to understand your commands. You can use:
                 success=True,
                 data={"api_provider": "none"}
             )
-    
+
     def _setup_claude_api(self) -> StepResult:
         """Set up Claude API."""
         print("\nTo get a Claude API key:")
         print("  1. Go to https://console.anthropic.com")
         print("  2. Sign up or log in")
         print("  3. Create an API key\n")
-        
+
         api_key = self._prompt("Enter your Claude API key: ")
-        
+
         if not api_key or not api_key.startswith("sk-"):
             print("\n⚠ Invalid API key format")
             return StepResult(success=True, data={"api_provider": "none"})
-        
+
         # Save to shell profile
         self._save_env_var("ANTHROPIC_API_KEY", api_key)
-        
+
         self.config["api_provider"] = "anthropic"
         self.config["api_key_configured"] = True
-        
+
         print("\n✓ Claude API key saved!")
         return StepResult(success=True, data={"api_provider": "anthropic"})
-    
+
     def _setup_openai_api(self) -> StepResult:
         """Set up OpenAI API."""
         print("\nTo get an OpenAI API key:")
         print("  1. Go to https://platform.openai.com")
         print("  2. Sign up or log in")
         print("  3. Create an API key\n")
-        
+
         api_key = self._prompt("Enter your OpenAI API key: ")
-        
+
         if not api_key or not api_key.startswith("sk-"):
             print("\n⚠ Invalid API key format")
             return StepResult(success=True, data={"api_provider": "none"})
-        
+
         self._save_env_var("OPENAI_API_KEY", api_key)
-        
+
         self.config["api_provider"] = "openai"
         self.config["api_key_configured"] = True
-        
+
         print("\n✓ OpenAI API key saved!")
         return StepResult(success=True, data={"api_provider": "openai"})
-    
+
     def _setup_ollama(self) -> StepResult:
         """Set up Ollama for local LLM."""
         print("\nChecking for Ollama...")
-        
+
         # Check if Ollama is installed
         ollama_path = shutil.which("ollama")
-        
+
         if not ollama_path:
             print("\nOllama is not installed. Install it with:")
             print("  curl -fsSL https://ollama.ai/install.sh | sh")
-            
+
             install = self._prompt("\nInstall Ollama now? [y/N]: ", default="n")
-            
+
             if install.lower() == 'y':
                 try:
                     subprocess.run(
@@ -368,7 +368,7 @@ Cortex uses AI to understand your commands. You can use:
                 except subprocess.CalledProcessError:
                     print("\n✗ Failed to install Ollama")
                     return StepResult(success=True, data={"api_provider": "none"})
-        
+
         # Pull a small model
         print("\nPulling llama3.2 model (this may take a few minutes)...")
         try:
@@ -379,48 +379,48 @@ Cortex uses AI to understand your commands. You can use:
             print("\n✓ Model ready!")
         except subprocess.CalledProcessError:
             print("\n⚠ Could not pull model - you can do this later with: ollama pull llama3.2")
-        
+
         self.config["api_provider"] = "ollama"
         self.config["ollama_model"] = "llama3.2"
-        
+
         return StepResult(success=True, data={"api_provider": "ollama"})
-    
+
     def _step_hardware_detection(self) -> StepResult:
         """Detect and configure hardware."""
         self._clear_screen()
         self._print_header("Step 2: Hardware Detection")
-        
+
         print("\nDetecting your hardware...\n")
-        
+
         hardware_info = self._detect_hardware()
-        
+
         # Display results
         print(f"  CPU: {hardware_info.get('cpu', 'Unknown')}")
         print(f"  RAM: {hardware_info.get('ram_gb', 'Unknown')} GB")
         print(f"  GPU: {hardware_info.get('gpu', 'None detected')}")
         print(f"  Disk: {hardware_info.get('disk_gb', 'Unknown')} GB available")
-        
+
         # GPU-specific setup
         if hardware_info.get('gpu_vendor') == 'nvidia':
             print("\n🎮 NVIDIA GPU detected!")
-            
+
             if self.interactive:
                 setup_cuda = self._prompt("Set up CUDA support? [Y/n]: ", default="y")
                 if setup_cuda.lower() != 'n':
                     hardware_info['setup_cuda'] = True
                     print("  → CUDA will be configured when needed")
-        
+
         self.config["hardware"] = hardware_info
-        
+
         if self.interactive:
             self._prompt("\nPress Enter to continue: ")
-        
+
         return StepResult(success=True, data={"hardware": hardware_info})
-    
-    def _detect_hardware(self) -> Dict[str, Any]:
+
+    def _detect_hardware(self) -> dict[str, Any]:
         """Detect system hardware."""
         info = {}
-        
+
         # CPU
         try:
             with open('/proc/cpuinfo') as f:
@@ -430,7 +430,7 @@ Cortex uses AI to understand your commands. You can use:
                         break
         except:
             info['cpu'] = 'Unknown'
-        
+
         # RAM
         try:
             with open('/proc/meminfo') as f:
@@ -441,7 +441,7 @@ Cortex uses AI to understand your commands. You can use:
                         break
         except:
             info['ram_gb'] = 0
-        
+
         # GPU
         try:
             result = subprocess.run(
@@ -463,7 +463,7 @@ Cortex uses AI to understand your commands. You can use:
                     break
         except:
             info['gpu'] = 'None detected'
-        
+
         # Disk
         try:
             result = subprocess.run(
@@ -477,24 +477,24 @@ Cortex uses AI to understand your commands. You can use:
                 info['disk_gb'] = int(parts[3].rstrip('G'))
         except:
             info['disk_gb'] = 0
-        
+
         return info
-    
+
     def _step_preferences(self) -> StepResult:
         """Configure user preferences."""
         self._clear_screen()
         self._print_header("Step 3: Preferences")
-        
+
         print("\nLet's customize Cortex for you.\n")
-        
+
         preferences = {}
-        
+
         if self.interactive:
             # Confirmation mode
             print("By default, Cortex will ask for confirmation before installing packages.")
             auto_confirm = self._prompt("Enable auto-confirm for installs? [y/N]: ", default="n")
             preferences['auto_confirm'] = auto_confirm.lower() == 'y'
-            
+
             # Verbosity
             print("\nVerbosity level:")
             print("  1. Quiet (minimal output)")
@@ -502,7 +502,7 @@ Cortex uses AI to understand your commands. You can use:
             print("  3. Verbose (detailed output)")
             verbosity = self._prompt("Choose [1-3]: ", default="2")
             preferences['verbosity'] = ['quiet', 'normal', 'verbose'][int(verbosity) - 1] if verbosity.isdigit() else 'normal'
-            
+
             # Offline mode
             print("\nEnable offline caching? (stores AI responses for offline use)")
             offline = self._prompt("Enable caching? [Y/n]: ", default="y")
@@ -513,60 +513,60 @@ Cortex uses AI to understand your commands. You can use:
                 'verbosity': 'normal',
                 'enable_cache': True
             }
-        
+
         self.config["preferences"] = preferences
-        
+
         print("\n✓ Preferences saved!")
         return StepResult(success=True, data={"preferences": preferences})
-    
+
     def _step_shell_integration(self) -> StepResult:
         """Set up shell integration."""
         self._clear_screen()
         self._print_header("Step 4: Shell Integration")
-        
+
         print("\nCortex can integrate with your shell for a better experience:\n")
         print("  • Tab completion for commands")
         print("  • Keyboard shortcuts (optional)")
         print("  • Automatic suggestions\n")
-        
+
         if not self.interactive:
             return StepResult(success=True, data={"shell_integration": False})
-        
+
         setup = self._prompt("Set up shell integration? [Y/n]: ", default="y")
-        
+
         if setup.lower() == 'n':
             return StepResult(success=True, data={"shell_integration": False})
-        
+
         # Detect shell
         shell = os.environ.get('SHELL', '/bin/bash')
         shell_name = os.path.basename(shell)
-        
+
         print(f"\nDetected shell: {shell_name}")
-        
+
         # Create completion script
         completion_script = self._generate_completion_script(shell_name)
         completion_file = self.CONFIG_DIR / f"completion.{shell_name}"
-        
+
         with open(completion_file, 'w') as f:
             f.write(completion_script)
-        
+
         # Add to shell config
         shell_config = self._get_shell_config(shell_name)
         source_line = f'\n# Cortex completion\n[ -f "{completion_file}" ] && source "{completion_file}"\n'
-        
+
         if shell_config.exists():
             with open(shell_config, 'a') as f:
                 f.write(source_line)
             print(f"\n✓ Added completion to {shell_config}")
-        
+
         print("\nRestart your shell or run:")
         print(f"  source {completion_file}")
-        
+
         if self.interactive:
             self._prompt("\nPress Enter to continue: ")
-        
+
         return StepResult(success=True, data={"shell_integration": True})
-    
+
     def _generate_completion_script(self, shell: str) -> str:
         """Generate shell completion script."""
         if shell in ['bash', 'sh']:
@@ -612,7 +612,7 @@ complete -c cortex -n "__fish_use_subcommand" -a "undo" -d "Undo last operation"
 complete -c cortex -n "__fish_use_subcommand" -a "history" -d "Show history"
 '''
         return "# No completion available for this shell"
-    
+
     def _get_shell_config(self, shell: str) -> Path:
         """Get the shell config file path."""
         home = Path.home()
@@ -622,26 +622,26 @@ complete -c cortex -n "__fish_use_subcommand" -a "history" -d "Show history"
             'fish': home / '.config' / 'fish' / 'config.fish',
         }
         return configs.get(shell, home / '.profile')
-    
+
     def _step_test_command(self) -> StepResult:
         """Run a test command."""
         self._clear_screen()
         self._print_header("Step 5: Test Cortex")
-        
+
         print("\nLet's make sure everything works!\n")
         print("Try running a simple command:\n")
         print("  $ cortex search text editors\n")
-        
+
         if not self.interactive:
             return StepResult(success=True, data={"test_completed": False})
-        
+
         run_test = self._prompt("Run test now? [Y/n]: ", default="y")
-        
+
         if run_test.lower() == 'n':
             return StepResult(success=True, data={"test_completed": False})
-        
+
         print("\n" + "=" * 50)
-        
+
         # Simulate or run actual test
         try:
             # Check if cortex command exists
@@ -670,22 +670,22 @@ complete -c cortex -n "__fish_use_subcommand" -a "history" -d "Show history"
             print("\n⚠ Test timed out - this is OK, Cortex is still usable")
         except Exception as e:
             print(f"\n⚠ Test failed: {e}")
-        
+
         print("=" * 50)
-        
+
         if self.interactive:
             self._prompt("\nPress Enter to continue: ")
-        
+
         return StepResult(success=True, data={"test_completed": True})
-    
+
     def _step_complete(self) -> StepResult:
         """Completion step."""
         self._clear_screen()
         self._print_header("Setup Complete! 🎉")
-        
+
         # Save all config
         self.save_config()
-        
+
         print("""
 Cortex is ready to use! Here are some things to try:
 
@@ -707,77 +707,77 @@ Cortex is ready to use! Here are some things to try:
      cortex help
 
 """)
-        
+
         # Show configuration summary
         print("Configuration Summary:")
         print(f"  • API Provider: {self.config.get('api_provider', 'none')}")
-        
+
         hardware = self.config.get('hardware', {})
         if hardware.get('gpu_vendor'):
             print(f"  • GPU: {hardware.get('gpu', 'Detected')}")
-        
+
         prefs = self.config.get('preferences', {})
         print(f"  • Verbosity: {prefs.get('verbosity', 'normal')}")
         print(f"  • Caching: {'enabled' if prefs.get('enable_cache') else 'disabled'}")
-        
+
         print("\n" + "=" * 50)
         print("Happy computing! 🐧")
         print("=" * 50 + "\n")
-        
+
         return StepResult(success=True)
-    
+
     # Helper methods
     def _clear_screen(self):
         """Clear the terminal screen."""
         if self.interactive:
             os.system('clear' if os.name == 'posix' else 'cls')
-    
+
     def _print_banner(self):
         """Print the Cortex banner."""
         banner = """
    ____           _            
   / ___|___  _ __| |_ _____  __
- | |   / _ \| '__| __/ _ \ \/ /
+ | |   / _ \\| '__| __/ _ \\ \\/ /
  | |__| (_) | |  | ||  __/>  < 
-  \____\___/|_|   \__\___/_/\_\\
+  \\____\\___/|_|   \\__\\___/_/\\_\\
                                
         Linux that understands you.
 """
         print(banner)
-    
+
     def _print_header(self, title: str):
         """Print a section header."""
         print("\n" + "=" * 50)
         print(f"  {title}")
         print("=" * 50 + "\n")
-    
+
     def _print_error(self, message: str):
         """Print an error message."""
         print(f"\n❌ {message}\n")
-    
+
     def _prompt(self, message: str, default: str = "") -> str:
         """Prompt for user input."""
         if not self.interactive:
             return default
-        
+
         try:
             response = input(message).strip()
             return response if response else default
         except (EOFError, KeyboardInterrupt):
             return default
-    
+
     def _save_env_var(self, name: str, value: str):
         """Save environment variable to shell config."""
         shell = os.environ.get('SHELL', '/bin/bash')
         shell_name = os.path.basename(shell)
         config_file = self._get_shell_config(shell_name)
-        
+
         export_line = f'\nexport {name}="{value}"\n'  # nosec - intentional user config storage
-        
+
         try:
             with open(config_file, 'a') as f:
                 f.write(export_line)
-            
+
             # Also set for current session
             os.environ[name] = value
         except Exception as e:
@@ -796,7 +796,7 @@ def run_wizard(interactive: bool = True) -> bool:
     return wizard.run()
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Get the saved configuration."""
     config_file = FirstRunWizard.CONFIG_FILE
     if config_file.exists():

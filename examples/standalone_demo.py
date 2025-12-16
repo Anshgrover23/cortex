@@ -4,9 +4,9 @@ Standalone demo of progress tracker without external dependencies.
 Works on all platforms (Windows, Linux, macOS).
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -22,7 +22,7 @@ async def demo_simple_installation(tracker: ProgressTracker):
     install_idx = tracker.add_stage("Installing dependencies")
     configure_idx = tracker.add_stage("Configuring database")
     test_idx = tracker.add_stage("Running tests")
-    
+
     # Stage 1: Update
     tracker.start_stage(update_idx)
     for i in range(10):
@@ -30,7 +30,7 @@ async def demo_simple_installation(tracker: ProgressTracker):
         tracker.display_progress()
         await asyncio.sleep(0.1)
     tracker.complete_stage(update_idx)
-    
+
     # Stage 2: Download
     tracker.start_stage(download_idx)
     bytes_downloaded = 0
@@ -41,7 +41,7 @@ async def demo_simple_installation(tracker: ProgressTracker):
         tracker.update_stage_progress(download_idx, processed_bytes=bytes_downloaded)
         tracker.display_progress()
     tracker.complete_stage(download_idx)
-    
+
     # Stage 3: Install
     tracker.start_stage(install_idx)
     for i in range(15):
@@ -49,7 +49,7 @@ async def demo_simple_installation(tracker: ProgressTracker):
         tracker.display_progress()
         await asyncio.sleep(0.1)
     tracker.complete_stage(install_idx)
-    
+
     # Stage 4: Configure
     tracker.start_stage(configure_idx)
     for i in range(8):
@@ -57,7 +57,7 @@ async def demo_simple_installation(tracker: ProgressTracker):
         tracker.display_progress()
         await asyncio.sleep(0.12)
     tracker.complete_stage(configure_idx)
-    
+
     # Stage 5: Test
     tracker.start_stage(test_idx)
     for i in range(5):
@@ -72,7 +72,7 @@ async def demo_failed_operation(tracker: ProgressTracker):
     download_idx = tracker.add_stage("Download package")
     install_idx = tracker.add_stage("Install package")
     verify_idx = tracker.add_stage("Verify installation")
-    
+
     # Successful download
     tracker.start_stage(download_idx)
     for i in range(10):
@@ -80,17 +80,17 @@ async def demo_failed_operation(tracker: ProgressTracker):
         tracker.display_progress()
         await asyncio.sleep(0.08)
     tracker.complete_stage(download_idx)
-    
+
     # Failed installation
     tracker.start_stage(install_idx)
     for i in range(5):
         tracker.update_stage_progress(install_idx, progress=(i + 1) / 10)
         tracker.display_progress()
         await asyncio.sleep(0.1)
-    
+
     # Simulate failure
     tracker.complete_stage(install_idx, error="Dependency conflict: libssl3 required")
-    
+
     # Operation fails, verify stage never runs
     raise Exception("Installation failed due to dependency conflict")
 
@@ -98,16 +98,16 @@ async def demo_failed_operation(tracker: ProgressTracker):
 async def demo_cancelled_operation(tracker: ProgressTracker):
     """Demo of user cancellation (press Ctrl+C to test)."""
     print("\n⚠️  Press Ctrl+C during this demo to test cancellation handling\n")
-    
+
     stages = []
     for i in range(10):
         idx = tracker.add_stage(f"Processing step {i+1}")
         stages.append(idx)
-    
+
     for idx in stages:
         if tracker.cancelled:
             break
-        
+
         tracker.start_stage(idx)
         for i in range(20):
             if tracker.cancelled:
@@ -115,7 +115,7 @@ async def demo_cancelled_operation(tracker: ProgressTracker):
             tracker.update_stage_progress(idx, progress=(i + 1) / 20)
             tracker.display_progress()
             await asyncio.sleep(0.1)
-        
+
         if not tracker.cancelled:
             tracker.complete_stage(idx)
 
@@ -127,7 +127,7 @@ async def main():
     print("=" * 70)
     print("\nDemonstrating progress notifications & status updates")
     print("Features: Progress bars, time estimation, multi-stage tracking, etc.\n")
-    
+
     # Demo 1: Successful installation
     print("\n" + "─" * 70)
     print("[Demo 1] Successful Multi-Stage Installation")
@@ -137,9 +137,9 @@ async def main():
         enable_notifications=True
     )
     await run_with_progress(tracker1, demo_simple_installation)
-    
+
     await asyncio.sleep(1.5)
-    
+
     # Demo 2: Failed installation
     print("\n\n" + "─" * 70)
     print("[Demo 2] Handling Installation Failures")
@@ -149,14 +149,14 @@ async def main():
         enable_notifications=True,
         notification_on_error=True
     )
-    
+
     try:
         await run_with_progress(tracker2, demo_failed_operation)
     except Exception as e:
         print(f"\n[Expected failure caught: {e}]")
-    
+
     await asyncio.sleep(1.5)
-    
+
     # Demo 3: Cancellation support
     print("\n\n" + "─" * 70)
     print("[Demo 3] Cancellation Support (Ctrl+C to test)")
@@ -165,12 +165,12 @@ async def main():
         "Long Running Operation",
         enable_notifications=False
     )
-    
+
     try:
         await run_with_progress(tracker3, demo_cancelled_operation)
     except KeyboardInterrupt:
         print("\n\n[Cancellation demo complete]")
-    
+
     print("\n" + "=" * 70)
     print(" " * 25 + "All Demos Complete!")
     print("=" * 70)

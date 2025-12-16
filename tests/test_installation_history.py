@@ -3,16 +3,15 @@
 Tests for Installation History and Rollback System
 """
 
-import unittest
-import tempfile
 import os
+import tempfile
+import unittest
 from datetime import datetime
+
 from cortex.installation_history import (
     InstallationHistory,
-    InstallationType,
     InstallationStatus,
-    PackageSnapshot,
-    InstallationRecord
+    InstallationType,
 )
 
 
@@ -167,9 +166,9 @@ class TestInstallationHistory(unittest.TestCase):
             'sudo apt install postgresql',
             'sudo apt-get remove python3'
         ]
-        
+
         packages = self.history._extract_packages_from_commands(commands)
-        
+
         self.assertIn('nginx', packages)
         self.assertIn('docker.io', packages)
         self.assertIn('postgresql', packages)
@@ -200,7 +199,7 @@ class TestInstallationHistory(unittest.TestCase):
 
             # Verify file is valid JSON
             import json
-            with open(temp_export.name, 'r') as f:
+            with open(temp_export.name) as f:
                 data = json.load(f)
 
             self.assertIsInstance(data, list)
@@ -233,7 +232,7 @@ class TestInstallationHistory(unittest.TestCase):
             self.assertTrue(os.path.exists(temp_export.name))
 
             # Verify file has content
-            with open(temp_export.name, 'r') as f:
+            with open(temp_export.name) as f:
                 content = f.read()
 
             self.assertIn('ID', content)
