@@ -6,7 +6,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from LLM.interpreter import CommandInterpreter, APIProvider
+from cortex.llm.interpreter import CommandInterpreter, APIProvider
 
 
 class TestCommandInterpreter(unittest.TestCase):
