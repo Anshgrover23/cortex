@@ -30,8 +30,10 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy Cortex source code
-COPY . /app/
+# Only copying necessary files for package installation, excluding sensitive data
+COPY cortex/ /app/cortex/
+COPY setup.py pyproject.toml MANIFEST.in /app/
+COPY README.md LICENSE /app/
 
 # Install Cortex in editable mode
 RUN pip install --no-cache-dir -e .

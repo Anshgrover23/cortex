@@ -63,15 +63,6 @@ data/
 # Examples (not needed in image)
 examples/
 
-# Scripts (not needed in image)
-scripts/
-
-# MCP (not needed in image)
-mcp/
-
-# Source test files
-src/
-
 # Images
 images/
 
@@ -84,5 +75,4 @@ Contributing.md
 contribution.md
 AGENTS.md
 Makefile
-MANIFEST.in
 .pre-commit-config.yaml
