@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+tests/
+test/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+
+# Build artifacts
+*.tar.gz
+*.whl
+cortex_linux.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Data files
+data/
+*.csv
+
+# Examples (not needed in image)
+examples/
+
+# Scripts (not needed in image)
+scripts/
+
+# MCP (not needed in image)
+mcp/
+
+# Source test files
+src/
+
+# Images
+images/
+
+# Other
+*.plan.md
+NEXT_STEPS.md
+CHANGELOG.md
+LICENSE
+SECURITY.md
+Contributing.md
+contribution.md
+AGENTS.md
+Makefile
+MANIFEST.in
+.pre-commit-config.yaml

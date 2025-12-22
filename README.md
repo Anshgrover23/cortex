@@ -112,6 +112,38 @@ cortex install nginx --dry-run
 cortex install nginx --execute
 ```
 
+### Docker (Quick Trial)
+
+Try Cortex instantly with Docker - no local installation required:
+
+```bash
+# Using Anthropic Claude
+docker run -it \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  cortexlinux/cortex install nginx --dry-run
+
+# Using OpenAI GPT-4
+docker run -it \
+  -e OPENAI_API_KEY=your-key-here \
+  cortexlinux/cortex install nginx --dry-run
+
+# Using Ollama (local LLM - requires Ollama running on host)
+docker run -it \
+  --network host \
+  -e CORTEX_PROVIDER=ollama \
+  cortexlinux/cortex install nginx --dry-run
+
+# View help
+docker run --rm cortexlinux/cortex --help
+
+# Check version
+docker run --rm cortexlinux/cortex --version
+```
+
+**Docker Hub**: [cortexlinux/cortex](https://hub.docker.com/r/cortexlinux/cortex)
+
+> **Note**: Cortex requires one of the following LLM providers: Anthropic Claude, OpenAI GPT-4, or Ollama (local). Set the appropriate environment variable or use `CORTEX_PROVIDER=ollama` for local Ollama instances.
+
 ---
 
 ## Usage
