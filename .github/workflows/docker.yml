@@ -48,7 +48,8 @@ jobs:
             echo "tag=v$VERSION" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event.inputs.version }}" != "" ]]; then
             # Use manual workflow input
-            VERSION=${GITHUB_EVENT_INPUTS_VERSION#v}
+            VERSION=${{ github.event.inputs.version }}
+            VERSION=${VERSION#v}
             echo "version=$VERSION" >> $GITHUB_OUTPUT
             echo "tag=v$VERSION" >> $GITHUB_OUTPUT
           else
