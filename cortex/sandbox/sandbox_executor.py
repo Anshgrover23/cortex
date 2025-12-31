@@ -145,6 +145,8 @@ class SandboxExecutor:
         "chmod",
         "chown",  # Limited use
         "systemctl",  # Read-only operations
+        "firejail",  # Sandbox execution
+        "/usr/bin/firejail",  # Full path for firejail
     }
 
     # Commands that require sudo (package installation only)
@@ -357,6 +359,12 @@ class SandboxExecutor:
                     # Allow reading from /etc for some commands (like apt-get)
                     if critical == "/etc" and "read" in command.lower():
                         continue
+                    # Allow whitelisted executables (like /usr/bin/firejail)
+                    if abs_path in self.ALLOWED_COMMANDS:
+                        continue
+                    # Allow firejail binary specifically
+                    if abs_path == "/usr/bin/firejail" or abs_path.endswith("/firejail"):
+                        continue
                     return f"Access to critical directory blocked: {abs_path}"
 
             # Block path traversal attempts
@@ -410,7 +418,6 @@ class SandboxExecutor:
             "--net=none",  # No network (adjust if needed)
             "--noroot",  # No root access
             "--caps.drop=all",  # Drop all capabilities
-            "--shell=none",  # No shell
             "--seccomp",  # Enable seccomp filtering
         ]
 
@@ -499,7 +506,11 @@ class SandboxExecutor:
         return True
 
     def execute(
-        self, command: str, dry_run: bool = False, enable_rollback: bool | None = None
+        self,
+        command: str,
+        dry_run: bool = False,
+        enable_rollback: bool | None = None,
+        use_sandbox: bool = True,
     ) -> ExecutionResult:
         """
         Execute command in sandbox.
@@ -508,6 +519,7 @@ class SandboxExecutor:
             command: Command to execute
             dry_run: If True, only show what would execute
             enable_rollback: Override default rollback setting
+            use_sandbox: If False, skip Firejail wrapping (needed for sudo commands)
 
         Returns:
             ExecutionResult object
@@ -533,10 +545,15 @@ class SandboxExecutor:
         if enable_rollback if enable_rollback is not None else self.enable_rollback:
             self._create_snapshot(session_id)
 
+        # Determine command to run
+        if use_sandbox:
+            run_cmd = self._create_firejail_command(command)
+        else:
+            run_cmd = shlex.split(command)
+
         # Dry-run mode
         if dry_run:
-            firejail_cmd = self._create_firejail_command(command)
-            preview = " ".join(shlex.quote(arg) for arg in firejail_cmd)
+            preview = " ".join(shlex.quote(arg) for arg in run_cmd)
 
             result = ExecutionResult(
                 command=command,
@@ -551,8 +568,6 @@ class SandboxExecutor:
         # Execute command
         process: subprocess.Popen[str] | None = None
         try:
-            firejail_cmd = self._create_firejail_command(command)
-
             self.logger.info(f"Executing: {command}")
 
             # Set resource limits if not using Firejail
@@ -587,7 +602,7 @@ class SandboxExecutor:
             if preexec_fn is not None:
                 popen_kwargs["preexec_fn"] = preexec_fn
 
-            process = subprocess.Popen(firejail_cmd, **popen_kwargs)
+            process = subprocess.Popen(run_cmd, **popen_kwargs)
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
             exit_code = process.returncode
             execution_time = time.time() - start_time

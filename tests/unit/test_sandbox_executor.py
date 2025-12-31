@@ -16,11 +16,7 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from cortex.sandbox.sandbox_executor import (
-    CommandBlocked,
-    ExecutionResult,
-    SandboxExecutor,
-)
+from cortex.sandbox.sandbox_executor import CommandBlocked, ExecutionResult, SandboxExecutor
 from cortex.validators import DANGEROUS_PATTERNS
 
 
@@ -340,6 +336,123 @@ class TestSecurityFeatures(unittest.TestCase):
             _ = self.executor.validate_command(cmd)
             # Should be blocked or at least validated
             # Current implementation may need enhancement
+
+
+class TestSandboxIntegration(unittest.TestCase):
+    """Integration tests for sandbox workflow."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.temp_dir = tempfile.mkdtemp()
+        # Import here to avoid circular imports
+        from cortex.sandbox.sandbox_manager import SandboxManager, SandboxStatus
+        from cortex.sandbox.sandbox_tester import SandboxTester
+
+        self.SandboxStatus = SandboxStatus
+        self.manager = SandboxManager(base_path=self.temp_dir)
+        self.tester = SandboxTester(self.manager)
+
+    def tearDown(self):
+        """Clean up test fixtures."""
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_full_workflow_dry_run(self):
+        """Test complete sandbox workflow in dry-run mode."""
+        # 1. Create sandbox
+        env = self.manager.create("workflow-test", network=False, cpu=2, memory=2048)
+        self.assertEqual(env.status, self.SandboxStatus.CREATED)
+
+        # 2. Verify sandbox exists
+        retrieved = self.manager.get_environment("workflow-test")
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.name, "workflow-test")
+
+        # 3. Try dry-run install
+        result = self.manager.install_package("workflow-test", "curl", dry_run=True)
+        self.assertIn("DRY-RUN", result.stdout)
+
+        # 4. Get status
+        status = self.manager.get_status("workflow-test")
+        self.assertEqual(status["name"], "workflow-test")
+        self.assertIn("firejail_available", status)
+
+        # 5. List environments
+        envs = self.manager.list_environments()
+        self.assertEqual(len(envs), 1)
+
+        # 6. Cleanup
+        destroyed = self.manager.destroy("workflow-test")
+        self.assertTrue(destroyed)
+
+        # 7. Verify cleanup
+        self.assertIsNone(self.manager.get_environment("workflow-test"))
+
+    def test_multiple_environments(self):
+        """Test managing multiple sandbox environments."""
+        # Create multiple environments
+        envs = []
+        for i in range(3):
+            env = self.manager.create(f"multi-env-{i}")
+            envs.append(env)
+
+        # List should show all
+        listed = self.manager.list_environments()
+        self.assertEqual(len(listed), 3)
+
+        # Destroy one
+        self.manager.destroy("multi-env-1")
+
+        # List should show 2
+        listed = self.manager.list_environments()
+        self.assertEqual(len(listed), 2)
+
+        # Cleanup remaining
+        for env in listed:
+            self.manager.destroy(env.name)
+
+    def test_environment_persistence(self):
+        """Test that environment data persists."""
+        # Create environment
+        self.manager.create("persist-test")
+
+        # Create new manager instance (simulates restart)
+        from cortex.sandbox.sandbox_manager import SandboxManager
+
+        new_manager = SandboxManager(base_path=self.temp_dir)
+
+        # Should find the environment
+        env = new_manager.get_environment("persist-test")
+        self.assertIsNotNone(env)
+        self.assertEqual(env.name, "persist-test")
+
+    def test_test_results_stored(self):
+        """Test that test results are stored in database."""
+        self.manager.create("test-store")
+
+        # Save multiple test results
+        self.manager.save_test_result("test-store", "Test 1", True, "Passed")
+        self.manager.save_test_result("test-store", "Test 2", False, "Failed")
+        self.manager.save_test_result("test-store", "Test 3", True, "Passed")
+
+        # Get status should include tests
+        status = self.manager.get_status("test-store")
+        self.assertEqual(len(status["recent_tests"]), 3)
+
+    def test_firejail_profile_generation(self):
+        """Test Firejail profile is correctly generated."""
+        env = self.manager.create("profile-gen", network=True, cpu=4, memory=4096)
+
+        # Read profile
+        with open(env.firejail_profile) as f:
+            profile = f.read()
+
+        # Check key elements
+        self.assertIn("private", profile)
+        self.assertIn("seccomp", profile)
+        self.assertIn("noroot", profile)
+        self.assertIn(env.root_path, profile)
+        # Network should be allowed when enabled
+        self.assertNotIn("net none", profile)
 
 
 if __name__ == "__main__":

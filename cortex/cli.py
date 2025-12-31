@@ -21,6 +21,7 @@ from cortex.installation_history import InstallationHistory, InstallationStatus,
 from cortex.llm.interpreter import CommandInterpreter
 from cortex.network_config import NetworkConfig
 from cortex.notification_manager import NotificationManager
+from cortex.sandbox import SandboxManager, SandboxTester
 from cortex.stack_manager import StackManager
 from cortex.validators import validate_api_key, validate_install_request
 
@@ -1066,6 +1067,335 @@ class CortexCLI:
 
         return 0
 
+    # --- Sandbox Environment Commands ---
+    def sandbox(self, args: argparse.Namespace) -> int:
+        """Handle sandbox environment management commands."""
+        action = getattr(args, "sandbox_action", None)
+
+        if not action:
+            self._print_error(
+                "Please specify a subcommand (create/list/status/install/test/promote/cleanup)"
+            )
+            return 1
+
+        try:
+            manager = SandboxManager()
+
+            if action == "create":
+                return self._sandbox_create(manager, args)
+            elif action == "list":
+                return self._sandbox_list(manager)
+            elif action == "status":
+                return self._sandbox_status(manager, args)
+            elif action == "install":
+                return self._sandbox_install(manager, args)
+            elif action == "test":
+                return self._sandbox_test(manager, args)
+            elif action == "promote":
+                return self._sandbox_promote(manager, args)
+            elif action == "cleanup":
+                return self._sandbox_cleanup(manager, args)
+            else:
+                self._print_error(f"Unknown sandbox subcommand: {action}")
+                return 1
+
+        except ValueError as e:
+            self._print_error(str(e))
+            return 1
+        except Exception as e:
+            self._print_error(f"Sandbox operation failed: {e}")
+            if self.verbose:
+                import traceback
+
+                traceback.print_exc()
+            return 1
+
+    def _sandbox_create(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Create a new sandbox environment."""
+        name = args.name
+        network = getattr(args, "network", False)
+        cpu = getattr(args, "cpu", 2)
+        memory = getattr(args, "memory", 2048)
+        disk = getattr(args, "disk", 1024)
+
+        try:
+            env = manager.create(
+                name=name,
+                network=network,
+                cpu=cpu,
+                memory=memory,
+                disk=disk,
+            )
+
+            cx_print(f"✓ Sandbox environment '{name}' created", "success")
+            console.print(f"   Location: [dim]{env.root_path}[/dim]")
+            console.print(
+                f"   Network: [dim]{'enabled' if network else 'disabled (use --network to enable)'}[/dim]"
+            )
+            console.print(
+                f"   Limits: [dim]{cpu} CPU cores, {memory}MB memory, {disk}MB disk[/dim]"
+            )
+
+            if not manager.executor.is_firejail_available():
+                cx_print(
+                    "⚠ Firejail not installed - sandbox isolation limited",
+                    "warning",
+                )
+                cx_print("Install with: sudo apt-get install firejail", "info")
+
+            return 0
+
+        except ValueError as e:
+            self._print_error(str(e))
+            return 1
+
+    def _sandbox_list(self, manager: SandboxManager) -> int:
+        """List all sandbox environments."""
+        environments = manager.list_environments()
+
+        if not environments:
+            cx_print("No sandbox environments found", "info")
+            cx_print("Create one with: cortex sandbox create <name>", "info")
+            return 0
+
+        cx_header("Sandbox Environments")
+
+        for env in environments:
+            status_colors = {
+                "created": "blue",
+                "active": "green",
+                "testing": "yellow",
+                "promoted": "cyan",
+                "failed": "red",
+                "cleaned": "dim",
+            }
+            status_color = status_colors.get(env.status.value, "white")
+            pkg_count = len(env.packages_installed)
+
+            console.print(f"\n  [bold green]{env.name}[/bold green]")
+            console.print(f"    Status: [{status_color}]{env.status.value}[/{status_color}]")
+            console.print(f"    Created: [dim]{env.created_at.strftime('%Y-%m-%d %H:%M')}[/dim]")
+            console.print(f"    Packages: [dim]{pkg_count}[/dim]")
+            console.print(
+                f"    Network: [dim]{'enabled' if env.network_enabled else 'disabled'}[/dim]"
+            )
+
+        console.print()
+        return 0
+
+    def _sandbox_status(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Show detailed status of a sandbox environment."""
+        name = args.name
+        status = manager.get_status(name)
+
+        if "error" in status:
+            self._print_error(status["error"])
+            return 1
+
+        cx_header(f"Sandbox: {status['name']}")
+
+        # Status and creation
+        status_colors = {
+            "created": "blue",
+            "active": "green",
+            "testing": "yellow",
+            "promoted": "cyan",
+            "failed": "red",
+        }
+        status_color = status_colors.get(status["status"], "white")
+        console.print(f"  Status: [{status_color}]{status['status']}[/{status_color}]")
+        console.print(f"  Created: {status['created_at']}")
+        console.print(f"  Path: [dim]{status['root_path']}[/dim]")
+
+        # Firejail status
+        if status["firejail_available"]:
+            console.print("  Isolation: [green]✓ Firejail enabled[/green]")
+        else:
+            console.print("  Isolation: [yellow]⚠ Limited (Firejail not installed)[/yellow]")
+
+        # Resource limits
+        limits = status["limits"]
+        console.print("\n  [bold]Resource Limits:[/bold]")
+        console.print(f"    CPU: {limits['cpu']} cores")
+        console.print(f"    Memory: {limits['memory_mb']} MB")
+        console.print(f"    Disk: {limits['disk_mb']} MB")
+        console.print(f"    Used: {status['disk_usage_mb']} MB")
+
+        # Network
+        console.print(
+            f"\n  Network: {'[green]enabled[/green]' if status['network_enabled'] else '[dim]disabled[/dim]'}"
+        )
+
+        # Installed packages
+        packages = status["packages_installed"]
+        console.print(f"\n  [bold]Packages ({status['package_count']}):[/bold]")
+        if packages:
+            for pkg in packages:
+                console.print(f"    • {pkg}")
+        else:
+            console.print("    [dim]No packages installed[/dim]")
+
+        # Recent tests
+        tests = status["recent_tests"]
+        if tests:
+            console.print("\n  [bold]Recent Tests:[/bold]")
+            for test in tests[:5]:
+                passed = test["passed"]
+                icon = "✓" if passed else "✗"
+                color = "green" if passed else "red"
+                console.print(
+                    f"    [{color}]{icon}[/{color}] {test['test_name']}: {test['message'][:50]}"
+                )
+
+        return 0
+
+    def _sandbox_install(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Install a package in a sandbox environment."""
+        name = args.name
+        package = args.package
+        dry_run = getattr(args, "dry_run", False)
+
+        cx_print(f"📦 Installing {package} in sandbox '{name}'...", "info")
+
+        result = manager.install_package(name, package, dry_run=dry_run)
+
+        if dry_run:
+            console.print(result.stdout)
+            return 0
+
+        if result.success:
+            cx_print(f"✓ {package} installed in sandbox '{name}'", "success")
+            cx_print("Run tests with: cortex sandbox test " + name, "info")
+            return 0
+        else:
+            self._print_error(f"Installation failed: {result.stderr}")
+            return 1
+
+    def _sandbox_test(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Run tests in a sandbox environment."""
+        name = args.name
+        package = getattr(args, "package", None)
+
+        cx_print(f"Running tests in sandbox '{name}'...", "info")
+        console.print()
+
+        tester = SandboxTester(manager)
+        results = tester.run_all_tests(name, package)
+
+        # Display results
+        for result in results.results:
+            icon = "✓" if result.passed else "✗"
+            color = "green" if result.passed else "red"
+            pkg_info = f" ({result.package_name})" if result.package_name else ""
+            console.print(f"   [{color}]{icon}[/{color}]  {result.test_name}{pkg_info}")
+            if not result.passed and result.message:
+                console.print(f"       [dim]{result.message}[/dim]")
+
+        console.print()
+
+        # Summary
+        if results.all_passed:
+            cx_print(
+                f"All tests passed! ({results.passed}/{results.total_tests})",
+                "success",
+            )
+            cx_print(f"Promote to main system with: cortex sandbox promote {name}", "info")
+        else:
+            cx_print(
+                f"Some tests failed ({results.failed}/{results.total_tests} failed)",
+                "warning",
+            )
+
+        return 0 if results.all_passed else 1
+
+    def _sandbox_promote(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Promote sandbox packages to main system."""
+        name = args.name
+        dry_run = getattr(args, "dry_run", False)
+        force = getattr(args, "force", False)
+
+        # Get packages to promote
+        env = manager.get_environment(name)
+        if not env:
+            self._print_error(f"Sandbox '{name}' not found")
+            return 1
+
+        if not env.packages_installed:
+            self._print_error(f"No packages installed in sandbox '{name}'")
+            return 1
+
+        # Show packages and confirm
+        console.print("\nThe following packages will be installed on your main system:")
+        for pkg in env.packages_installed:
+            console.print(f"  • {pkg}")
+        console.print()
+
+        if dry_run:
+            cx_print("[DRY-RUN] No changes made to main system", "warning")
+            return 0
+
+        if not force:
+            try:
+                response = input("Promote to main system? [y/N]: ")
+                if response.lower() not in ("y", "yes"):
+                    cx_print("Promotion cancelled", "info")
+                    return 0
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                cx_print("Promotion cancelled", "info")
+                return 0
+
+        # Perform promotion
+        cx_print("🚀 Installing packages on main system...", "info")
+
+        result = manager.promote_to_system(name, dry_run=False)
+
+        if result.success:
+            cx_print(f"✓ {result.message}", "success")
+            cx_print(f"Cleanup sandbox with: cortex sandbox cleanup {name}", "info")
+            return 0
+        else:
+            self._print_error(f"Promotion failed: {result.message}")
+            for error in result.errors:
+                console.print(f"  [red]• {error}[/red]")
+            return 1
+
+    def _sandbox_cleanup(self, manager: SandboxManager, args: argparse.Namespace) -> int:
+        """Remove a sandbox environment."""
+        name = args.name
+        force = getattr(args, "force", False)
+
+        env = manager.get_environment(name)
+        if not env:
+            self._print_error(f"Sandbox '{name}' not found")
+            return 1
+
+        # Confirm deletion
+        if not force:
+            pkg_count = len(env.packages_installed)
+            console.print(f"\nSandbox '{name}' will be removed:")
+            console.print(f"  • {pkg_count} package(s) installed")
+            console.print(f"  • Path: {env.root_path}")
+            console.print()
+
+            try:
+                response = input("Remove sandbox and all its data? [y/N]: ")
+                if response.lower() not in ("y", "yes"):
+                    cx_print("Cleanup cancelled", "info")
+                    return 0
+            except (EOFError, KeyboardInterrupt):
+                console.print()
+                cx_print("Cleanup cancelled", "info")
+                return 0
+
+        # Destroy sandbox
+        if manager.destroy(name):
+            cx_print(f"✓ Sandbox '{name}' removed", "success")
+            return 0
+        else:
+            self._print_error(f"Failed to remove sandbox '{name}'")
+            return 1
+
     # --- Import Dependencies Command ---
     def import_deps(self, args: argparse.Namespace) -> int:
         """Import and install dependencies from package manager files.
@@ -1330,6 +1660,7 @@ def show_rich_help():
     table.add_row("rollback <id>", "Undo installation")
     table.add_row("notify", "Manage desktop notifications")
     table.add_row("env", "Manage environment variables")
+    table.add_row("sandbox", "Test packages in isolated environments")
     table.add_row("cache stats", "Show LLM cache statistics")
     table.add_row("stack <name>", "Install the stack")
     table.add_row("doctor", "System health check")
@@ -1588,6 +1919,70 @@ def main():
     )
     # --------------------------
 
+    # --- Sandbox Environment Commands ---
+    sandbox_parser = subparsers.add_parser(
+        "sandbox", help="Manage isolated sandbox environments for testing packages"
+    )
+    sandbox_subs = sandbox_parser.add_subparsers(dest="sandbox_action", help="Sandbox actions")
+
+    # sandbox create <name> [--network] [--cpu N] [--memory N] [--disk N]
+    sandbox_create_parser = sandbox_subs.add_parser(
+        "create", help="Create a new sandbox environment"
+    )
+    sandbox_create_parser.add_argument("name", help="Sandbox environment name")
+    sandbox_create_parser.add_argument(
+        "--network", action="store_true", help="Enable network access in sandbox"
+    )
+    sandbox_create_parser.add_argument(
+        "--cpu", type=int, default=2, help="CPU cores limit (default: 2)"
+    )
+    sandbox_create_parser.add_argument(
+        "--memory", type=int, default=2048, help="Memory limit in MB (default: 2048)"
+    )
+    sandbox_create_parser.add_argument(
+        "--disk", type=int, default=1024, help="Disk limit in MB (default: 1024)"
+    )
+
+    # sandbox list
+    sandbox_subs.add_parser("list", help="List all sandbox environments")
+
+    # sandbox status <name>
+    sandbox_status_parser = sandbox_subs.add_parser("status", help="Show detailed sandbox status")
+    sandbox_status_parser.add_argument("name", help="Sandbox environment name")
+
+    # sandbox install <name> <package> [--dry-run]
+    sandbox_install_parser = sandbox_subs.add_parser("install", help="Install a package in sandbox")
+    sandbox_install_parser.add_argument("name", help="Sandbox environment name")
+    sandbox_install_parser.add_argument("package", help="Package to install")
+    sandbox_install_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview installation only"
+    )
+
+    # sandbox test <name> [--package PKG]
+    sandbox_test_parser = sandbox_subs.add_parser("test", help="Run tests in sandbox")
+    sandbox_test_parser.add_argument("name", help="Sandbox environment name")
+    sandbox_test_parser.add_argument("--package", help="Test specific package only")
+
+    # sandbox promote <name> [--dry-run] [--force]
+    sandbox_promote_parser = sandbox_subs.add_parser(
+        "promote", help="Promote sandbox packages to main system"
+    )
+    sandbox_promote_parser.add_argument("name", help="Sandbox environment name")
+    sandbox_promote_parser.add_argument(
+        "--dry-run", action="store_true", help="Preview promotion only"
+    )
+    sandbox_promote_parser.add_argument(
+        "--force", "-f", action="store_true", help="Skip confirmation prompt"
+    )
+
+    # sandbox cleanup <name> [--force]
+    sandbox_cleanup_parser = sandbox_subs.add_parser("cleanup", help="Remove sandbox environment")
+    sandbox_cleanup_parser.add_argument("name", help="Sandbox environment name")
+    sandbox_cleanup_parser.add_argument(
+        "--force", "-f", action="store_true", help="Skip confirmation prompt"
+    )
+    # --------------------------
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1630,6 +2025,8 @@ def main():
             return 1
         elif args.command == "env":
             return cli.env(args)
+        elif args.command == "sandbox":
+            return cli.sandbox(args)
         else:
             parser.print_help()
             return 1
