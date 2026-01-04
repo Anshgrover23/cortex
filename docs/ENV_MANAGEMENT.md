@@ -595,12 +595,13 @@ Total: 5 entries, 1 duplicates, 1 missing
 
 ```bash
 # Add to beginning of PATH (prepend - default)
+# Note: Without --persist, only affects this CLI process (immediately lost)
 cortex env path add /new/path
 
 # Add to end of PATH (append)
 cortex env path add /new/path --append
 
-# Add and persist to shell config
+# Add and persist to shell config (permanent, available in new terminals)
 cortex env path add /new/path --persist
 
 # Specify shell for persistence
@@ -616,10 +617,10 @@ cortex env path add /new/path --persist --shell zsh
 #### Remove PATH Entry
 
 ```bash
-# Remove from current session
+# Remove from this CLI process only (immediately lost)
 cortex env path remove /unwanted/path
 
-# Remove and update shell config
+# Remove from shell config (permanent)
 cortex env path remove /unwanted/path --persist
 ```
 

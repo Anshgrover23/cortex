@@ -1512,31 +1512,43 @@ class CortexCLI:
         # Resolve to absolute path
         new_path = str(Path(new_path).expanduser().resolve())
 
-        # Check if already in PATH
-        current_path = os.environ.get("PATH", "")
-        if new_path in current_path.split(os.pathsep):
-            cx_print(f"'{new_path}' is already in PATH", "info")
-            return 0
-
-        # Add to current session
-        updated = analyzer.safe_add_path(new_path, prepend=prepend)
-        os.environ["PATH"] = updated
-
-        position = "prepended to" if prepend else "appended to"
-        cx_print(f"✓ '{new_path}' {position} PATH (current session)", "success")
-
         if persist:
+            # When persisting, check the config file, not current PATH
             try:
+                config_path = analyzer.get_shell_config_path()
+                # Check if already in config
+                config_content = ""
+                if os.path.exists(config_path):
+                    with open(config_path) as f:
+                        config_content = f.read()
+
+                # Check if path is in a cortex-managed block
+                if (
+                    f'export PATH="{new_path}:$PATH"' in config_content
+                    or f'export PATH="$PATH:{new_path}"' in config_content
+                ):
+                    cx_print(f"'{new_path}' is already in {config_path}", "info")
+                    return 0
+
                 analyzer.add_path_to_config(new_path, prepend=prepend)
-                cx_print(
-                    f"✓ Added to {analyzer.get_shell_config_path()} for persistence", "success"
-                )
+                cx_print(f"✓ Added '{new_path}' to {config_path}", "success")
+                console.print(f"[dim]To use in current shell: source {config_path}[/dim]")
             except Exception as e:
                 self._print_error(f"Failed to persist: {e}")
                 return 1
+        else:
+            # Check if already in current PATH (for non-persist mode)
+            current_path = os.environ.get("PATH", "")
+            if new_path in current_path.split(os.pathsep):
+                cx_print(f"'{new_path}' is already in PATH", "info")
+                return 0
 
-        if not persist:
-            cx_print("Note: Add --persist to make this change permanent", "info")
+            # Only modify current process env (won't persist across commands)
+            updated = analyzer.safe_add_path(new_path, prepend=prepend)
+            os.environ["PATH"] = updated
+            position = "prepended to" if prepend else "appended to"
+            cx_print(f"✓ '{new_path}' {position} PATH (this process only)", "success")
+            cx_print("Note: Add --persist to make this permanent", "info")
 
         return 0
 
@@ -1547,27 +1559,30 @@ class CortexCLI:
         target_path = args.path
         persist = getattr(args, "persist", False)
 
-        current_path = os.environ.get("PATH", "")
-        if target_path not in current_path.split(os.pathsep):
-            cx_print(f"'{target_path}' is not in PATH", "info")
-            return 0
-
-        # Remove from current session
-        updated = analyzer.safe_remove_path(target_path)
-        os.environ["PATH"] = updated
-
-        cx_print(f"✓ Removed '{target_path}' from PATH (current session)", "success")
-
         if persist:
+            # When persisting, remove from config file
             try:
+                config_path = analyzer.get_shell_config_path()
                 result = analyzer.remove_path_from_config(target_path)
                 if result:
-                    cx_print("✓ Removed from shell config", "success")
+                    cx_print(f"✓ Removed '{target_path}' from {config_path}", "success")
+                    console.print(f"[dim]To update current shell: source {config_path}[/dim]")
                 else:
-                    cx_print("Note: Path was not in cortex-managed config block", "info")
+                    cx_print(f"'{target_path}' was not in cortex-managed config block", "info")
             except Exception as e:
-                self._print_error(f"Failed to persist: {e}")
+                self._print_error(f"Failed to persist removal: {e}")
                 return 1
+        else:
+            # Only modify current process env (won't persist across commands)
+            current_path = os.environ.get("PATH", "")
+            if target_path not in current_path.split(os.pathsep):
+                cx_print(f"'{target_path}' is not in current PATH", "info")
+                return 0
+
+            updated = analyzer.safe_remove_path(target_path)
+            os.environ["PATH"] = updated
+            cx_print(f"✓ Removed '{target_path}' from PATH (this process only)", "success")
+            cx_print("Note: Add --persist to make this permanent", "info")
 
         return 0
 
